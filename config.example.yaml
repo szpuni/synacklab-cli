@@ -1,0 +1,7 @@
+# Synacklab Configuration Example
+# Copy this file to ~/.synacklab/config.yaml and customize
+
+aws:
+  sso:
+    start_url: "https://your-company.awsapps.com/start"
+    region: "us-east-1"

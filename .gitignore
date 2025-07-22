@@ -8,6 +8,12 @@
 *.so
 *.dylib
 
+# Project-specific binaries
+synacklab
+synacklab-*
+bin/
+dist/
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -30,3 +36,12 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Build and release artifacts
+*.tar.gz
+*.zip
+release/
+
+# Configuration files (user-specific)
+config.yaml
+.synacklab/
