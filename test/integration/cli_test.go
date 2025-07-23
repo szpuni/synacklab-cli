@@ -8,12 +8,14 @@ import (
 )
 
 func TestCLIIntegration(t *testing.T) {
-	// Build the binary first - run from project root
-	buildCmd := exec.Command("go", "build", "-o", "test/integration/synacklab-test", "./cmd/synacklab")
-	buildCmd.Dir = "../.."
+	// Build the binary first - use go build with module path
+	buildCmd := exec.Command("go", "build", "-o", "synacklab-test", "synacklab/cmd/synacklab")
+	var buildOut bytes.Buffer
+	buildCmd.Stdout = &buildOut
+	buildCmd.Stderr = &buildOut
 	err := buildCmd.Run()
 	if err != nil {
-		t.Fatalf("Failed to build binary: %v", err)
+		t.Fatalf("Failed to build binary: %v\nOutput: %s", err, buildOut.String())
 	}
 	defer func() {
 		if err := exec.Command("rm", "synacklab-test").Run(); err != nil {
@@ -70,12 +72,14 @@ func TestCLIIntegration(t *testing.T) {
 }
 
 func TestCLIVersion(t *testing.T) {
-	// Build the binary - run from project root
-	buildCmd := exec.Command("go", "build", "-o", "test/integration/synacklab-test", "./cmd/synacklab")
-	buildCmd.Dir = "../.."
+	// Build the binary - use go build with module path
+	buildCmd := exec.Command("go", "build", "-o", "synacklab-test", "synacklab/cmd/synacklab")
+	var buildOut bytes.Buffer
+	buildCmd.Stdout = &buildOut
+	buildCmd.Stderr = &buildOut
 	err := buildCmd.Run()
 	if err != nil {
-		t.Fatalf("Failed to build binary: %v", err)
+		t.Fatalf("Failed to build binary: %v\nOutput: %s", err, buildOut.String())
 	}
 	defer func() {
 		if err := exec.Command("rm", "synacklab-test").Run(); err != nil {
