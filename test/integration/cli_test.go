@@ -8,8 +8,9 @@ import (
 )
 
 func TestCLIIntegration(t *testing.T) {
-	// Build the binary first - use go build with module path
-	buildCmd := exec.Command("go", "build", "-o", "synacklab-test", "synacklab/cmd/synacklab")
+	// Build the binary first - use relative path from project root
+	buildCmd := exec.Command("go", "build", "-o", "test/integration/synacklab-test", "./cmd/synacklab")
+	buildCmd.Dir = "../.."
 	var buildOut bytes.Buffer
 	buildCmd.Stdout = &buildOut
 	buildCmd.Stderr = &buildOut
@@ -72,8 +73,9 @@ func TestCLIIntegration(t *testing.T) {
 }
 
 func TestCLIVersion(t *testing.T) {
-	// Build the binary - use go build with module path
-	buildCmd := exec.Command("go", "build", "-o", "synacklab-test", "synacklab/cmd/synacklab")
+	// Build the binary - use relative path from project root
+	buildCmd := exec.Command("go", "build", "-o", "test/integration/synacklab-test", "./cmd/synacklab")
+	buildCmd.Dir = "../.."
 	var buildOut bytes.Buffer
 	buildCmd.Stdout = &buildOut
 	buildCmd.Stderr = &buildOut
