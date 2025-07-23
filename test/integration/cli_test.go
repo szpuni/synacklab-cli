@@ -2,27 +2,33 @@ package integration
 
 import (
 	"bytes"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
 )
 
 func TestCLIIntegration(t *testing.T) {
-	// Build the binary first - use relative path from project root
-	buildCmd := exec.Command("go", "build", "-o", "test/integration/synacklab-test", "./cmd/synacklab")
-	buildCmd.Dir = "../.."
-	var buildOut bytes.Buffer
-	buildCmd.Stdout = &buildOut
-	buildCmd.Stderr = &buildOut
-	err := buildCmd.Run()
-	if err != nil {
-		t.Fatalf("Failed to build binary: %v\nOutput: %s", err, buildOut.String())
-	}
-	defer func() {
-		if err := exec.Command("rm", "synacklab-test").Run(); err != nil {
-			t.Logf("Failed to remove test binary: %v", err)
+	// Use pre-built binary from CI or build locally
+	binaryPath := os.Getenv("SYNACKLAB_BINARY")
+	if binaryPath == "" {
+		// Build the binary locally for local testing
+		buildCmd := exec.Command("go", "build", "-o", "synacklab-test", "./cmd/synacklab")
+		buildCmd.Dir = "../.."
+		var buildOut bytes.Buffer
+		buildCmd.Stdout = &buildOut
+		buildCmd.Stderr = &buildOut
+		err := buildCmd.Run()
+		if err != nil {
+			t.Fatalf("Failed to build binary: %v\nOutput: %s", err, buildOut.String())
 		}
-	}()
+		binaryPath = "../../synacklab-test"
+		defer func() {
+			if err := exec.Command("rm", "../../synacklab-test").Run(); err != nil {
+				t.Logf("Failed to remove test binary: %v", err)
+			}
+		}()
+	}
 
 	tests := []struct {
 		name     string
@@ -53,7 +59,7 @@ func TestCLIIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := exec.Command("./synacklab-test", tt.args...)
+			cmd := exec.Command(binaryPath, tt.args...)
 			var out bytes.Buffer
 			cmd.Stdout = &out
 			cmd.Stderr = &out
@@ -73,29 +79,34 @@ func TestCLIIntegration(t *testing.T) {
 }
 
 func TestCLIVersion(t *testing.T) {
-	// Build the binary - use relative path from project root
-	buildCmd := exec.Command("go", "build", "-o", "test/integration/synacklab-test", "./cmd/synacklab")
-	buildCmd.Dir = "../.."
-	var buildOut bytes.Buffer
-	buildCmd.Stdout = &buildOut
-	buildCmd.Stderr = &buildOut
-	err := buildCmd.Run()
-	if err != nil {
-		t.Fatalf("Failed to build binary: %v\nOutput: %s", err, buildOut.String())
-	}
-	defer func() {
-		if err := exec.Command("rm", "synacklab-test").Run(); err != nil {
-			t.Logf("Failed to remove test binary: %v", err)
+	// Use pre-built binary from CI or build locally
+	binaryPath := os.Getenv("SYNACKLAB_BINARY")
+	if binaryPath == "" {
+		// Build the binary locally for local testing
+		buildCmd := exec.Command("go", "build", "-o", "synacklab-test", "./cmd/synacklab")
+		buildCmd.Dir = "../.."
+		var buildOut bytes.Buffer
+		buildCmd.Stdout = &buildOut
+		buildCmd.Stderr = &buildOut
+		err := buildCmd.Run()
+		if err != nil {
+			t.Fatalf("Failed to build binary: %v\nOutput: %s", err, buildOut.String())
 		}
-	}()
+		binaryPath = "../../synacklab-test"
+		defer func() {
+			if err := exec.Command("rm", "../../synacklab-test").Run(); err != nil {
+				t.Logf("Failed to remove test binary: %v", err)
+			}
+		}()
+	}
 
 	// Test that the binary runs without arguments (should show help)
-	cmd := exec.Command("./synacklab-test")
+	cmd := exec.Command(binaryPath)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 
-	err = cmd.Run()
+	err := cmd.Run()
 	// Should exit with 0 when showing help
 	if err != nil {
 		t.Logf("Command output: %s", out.String())
