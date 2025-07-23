@@ -40,7 +40,7 @@ type AWSProfile struct {
 	Region    string
 }
 
-func runAWSConfig(cmd *cobra.Command, args []string) error {
+func runAWSConfig(_ *cobra.Command, _ []string) error {
 	fmt.Println("🔐 Starting AWS SSO authentication...")
 
 	// Load configuration
@@ -79,7 +79,7 @@ func runAWSConfig(cmd *cobra.Command, args []string) error {
 		} else {
 			fmt.Print("Enter your AWS SSO start URL: ")
 		}
-		fmt.Scanln(&ssoStartURL)
+		_, _ = fmt.Scanln(&ssoStartURL) // Ignore error for user input
 		if ssoStartURL == "" && appConfig.AWS.SSO.StartURL != "" {
 			ssoStartURL = appConfig.AWS.SSO.StartURL
 		}
@@ -90,7 +90,7 @@ func runAWSConfig(cmd *cobra.Command, args []string) error {
 			defaultRegion = appConfig.AWS.SSO.Region
 		}
 		fmt.Printf("Enter your SSO region (default: %s): ", defaultRegion)
-		fmt.Scanln(&ssoRegion)
+		_, _ = fmt.Scanln(&ssoRegion) // Ignore error for user input
 		if ssoRegion == "" {
 			ssoRegion = defaultRegion
 		}
@@ -130,7 +130,7 @@ func runAWSConfig(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\n🌐 Please visit: %s\n", *deviceAuthResp.VerificationUriComplete)
 	fmt.Printf("📋 And enter code: %s\n", *deviceAuthResp.UserCode)
 	fmt.Println("\nPress Enter after completing the authorization...")
-	fmt.Scanln()
+	_, _ = fmt.Scanln() // Ignore error for user input
 
 	// Poll for token
 	tokenResp, err := ssooidcClient.CreateToken(context.TODO(), &ssooidc.CreateTokenInput{
@@ -187,7 +187,9 @@ func runAWSConfig(cmd *cobra.Command, args []string) error {
 	// Let user choose profile
 	fmt.Print("\nSelect profile number to set as default: ")
 	var choice int
-	fmt.Scanln(&choice)
+	if _, err := fmt.Scanln(&choice); err != nil {
+		return fmt.Errorf("failed to read selection: %w", err)
+	}
 
 	if choice < 1 || choice > len(profiles) {
 		return fmt.Errorf("invalid selection")

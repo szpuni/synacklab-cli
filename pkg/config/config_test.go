@@ -8,11 +8,7 @@ import (
 
 func TestLoadConfig(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "synacklab-config-test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	// Create test config file
 	configPath := filepath.Join(tempDir, "config.yaml")
@@ -21,7 +17,7 @@ func TestLoadConfig(t *testing.T) {
     start_url: "https://test.awsapps.com/start"
     region: "us-west-2"
 `
-	err = os.WriteFile(configPath, []byte(configContent), 0644)
+	err := os.WriteFile(configPath, []byte(configContent), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create test config file: %v", err)
 	}
@@ -57,11 +53,7 @@ func TestLoadConfigNonExistent(t *testing.T) {
 
 func TestSaveConfig(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "synacklab-config-test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	configPath := filepath.Join(tempDir, "config.yaml")
 
@@ -75,7 +67,7 @@ func TestSaveConfig(t *testing.T) {
 		},
 	}
 
-	err = config.SaveConfigToPath(configPath)
+	err := config.SaveConfigToPath(configPath)
 	if err != nil {
 		t.Fatalf("Failed to save config: %v", err)
 	}

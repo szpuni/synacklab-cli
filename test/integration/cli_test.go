@@ -15,7 +15,11 @@ func TestCLIIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to build binary: %v", err)
 	}
-	defer exec.Command("rm", "synacklab-test").Run()
+	defer func() {
+		if err := exec.Command("rm", "synacklab-test").Run(); err != nil {
+			t.Logf("Failed to remove test binary: %v", err)
+		}
+	}()
 
 	tests := []struct {
 		name     string
@@ -73,7 +77,11 @@ func TestCLIVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to build binary: %v", err)
 	}
-	defer exec.Command("rm", "synacklab-test").Run()
+	defer func() {
+		if err := exec.Command("rm", "synacklab-test").Run(); err != nil {
+			t.Logf("Failed to remove test binary: %v", err)
+		}
+	}()
 
 	// Test that the binary runs without arguments (should show help)
 	cmd := exec.Command("./synacklab-test")

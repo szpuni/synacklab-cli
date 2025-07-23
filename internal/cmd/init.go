@@ -16,7 +16,7 @@ var initCmd = &cobra.Command{
 	RunE:  runInit,
 }
 
-func runInit(cmd *cobra.Command, args []string) error {
+func runInit(_ *cobra.Command, _ []string) error {
 	configPath, err := config.GetConfigPath()
 	if err != nil {
 		return fmt.Errorf("failed to get config path: %w", err)
@@ -27,7 +27,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("⚠️  Configuration file already exists at: %s\n", configPath)
 		fmt.Print("Do you want to overwrite it? (y/N): ")
 		var response string
-		fmt.Scanln(&response)
+		_, _ = fmt.Scanln(&response) // Ignore error for user input
 		if response != "y" && response != "Y" {
 			fmt.Println("Configuration initialization cancelled.")
 			return nil

@@ -1,0 +1,67 @@
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+  exclusions:
+    generated: lax
+
+  settings:
+    gofmt:
+      simplify: true
+
+linters:
+  default: none
+
+  enable:
+    - depguard
+    - dupl
+    - gomodguard
+    - govet
+    - ineffassign
+    - misspell
+    - nakedret
+    - revive
+    - staticcheck
+    - thelper
+    - unused
+    - usestdlibvars
+    - usetesting
+
+  exclusions:
+    generated: lax
+
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+
+    rules: []
+
+    warn-unused: true
+
+  settings:
+    depguard:
+      rules:
+        Main:
+          deny:
+            - pkg: github.com/hashicorp/go-multierror
+              desc: "use errors instead"
+            - pkg: github.com/pkg/errors
+              desc: "use errors instead"
+
+    dupl:
+      threshold: 400
+
+    gomodguard:
+      blocked:
+        modules:
+          - github.com/evanphx/json-patch:
+              recommendations:
+                - github.com/evanphx/json-patch/v5
+
+run:
+  timeout: 10m
+
+version: "2"

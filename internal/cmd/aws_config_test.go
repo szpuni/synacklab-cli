@@ -10,16 +10,10 @@ import (
 
 func TestUpdateAWSConfig(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "synacklab-test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	// Mock home directory
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tempDir)
-	defer os.Setenv("HOME", originalHome)
+	t.Setenv("HOME", tempDir)
 
 	// Test profile
 	profile := AWSProfile{
@@ -33,7 +27,7 @@ func TestUpdateAWSConfig(t *testing.T) {
 	ssoRegion := "us-east-1"
 
 	// Test updateAWSConfig
-	err = updateAWSConfig(profile, ssoStartURL, ssoRegion)
+	err := updateAWSConfig(profile, ssoStartURL, ssoRegion)
 	if err != nil {
 		t.Fatalf("updateAWSConfig failed: %v", err)
 	}
@@ -74,20 +68,14 @@ func TestUpdateAWSConfig(t *testing.T) {
 
 func TestUpdateAWSConfigExistingFile(t *testing.T) {
 	// Create a temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "synacklab-test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	// Mock home directory
-	originalHome := os.Getenv("HOME")
-	os.Setenv("HOME", tempDir)
-	defer os.Setenv("HOME", originalHome)
+	t.Setenv("HOME", tempDir)
 
 	// Create existing config file
 	awsDir := filepath.Join(tempDir, ".aws")
-	err = os.MkdirAll(awsDir, 0755)
+	err := os.MkdirAll(awsDir, 0755)
 	if err != nil {
 		t.Fatalf("Failed to create .aws directory: %v", err)
 	}
