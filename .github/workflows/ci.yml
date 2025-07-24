@@ -108,13 +108,19 @@ jobs:
     - name: Download dependencies
       run: go mod download
     
-    - name: Build binary for integration tests
-      run: go build -o synacklab-test ./cmd/synacklab
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: synacklab-binary
+        path: ./
+    
+    - name: Make binary executable
+      run: chmod +x ./synacklab
     
     - name: Run integration tests
       run: go test -v ./test/integration/...
       env:
-        SYNACKLAB_BINARY: ./synacklab-test
+        SYNACKLAB_BINARY: ./synacklab
 
   release:
     name: Release
