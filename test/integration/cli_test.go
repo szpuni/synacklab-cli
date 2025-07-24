@@ -4,9 +4,25 @@ import (
 	"bytes"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func getProjectRoot() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "../.."
+	}
+	// Walk up until we find go.mod
+	for dir != "/" {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		dir = filepath.Dir(dir)
+	}
+	return "../.."
+}
 
 func TestCLIIntegration(t *testing.T) {
 	// Use pre-built binary from CI or build locally
@@ -14,7 +30,7 @@ func TestCLIIntegration(t *testing.T) {
 	if binaryPath == "" {
 		// Build the binary locally for local testing
 		buildCmd := exec.Command("go", "build", "-o", "synacklab-test", "./cmd/synacklab")
-		buildCmd.Dir = "../.."
+		buildCmd.Dir = getProjectRoot()
 		var buildOut bytes.Buffer
 		buildCmd.Stdout = &buildOut
 		buildCmd.Stderr = &buildOut
