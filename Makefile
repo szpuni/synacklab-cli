@@ -23,8 +23,7 @@ all: deps fmt vet test build
 # Build the binary
 build:
 	@echo "Building $(BINARY_NAME)..."
-	@if [ ! -d "$(MAIN_PATH)" ]; then echo "Error: Directory $(MAIN_PATH) not found"; exit 1; fi
-	@mkdir -p $(BUILD_DIR)
+	@mkdir -p $(BUILD_DIR) $(MAIN_PATH)
 	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PATH)
 	@echo "Binary built: $(BUILD_DIR)/$(BINARY_NAME)"
 
