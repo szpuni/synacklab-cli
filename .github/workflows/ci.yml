@@ -88,7 +88,7 @@ jobs:
       run: make build
     
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: synacklab-binary
         path: bin/synacklab
@@ -109,7 +109,7 @@ jobs:
   #     run: go mod download
     
   #   - name: Download build artifacts
-  #     uses: actions/download-artifact@v3
+  #     uses: actions/download-artifact@v4
   #     with:
   #       name: synacklab-binary
   #       path: ./
