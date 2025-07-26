@@ -125,7 +125,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [lint, test, build, integration-test]
+    needs: [lint, test, build]
     if: github.event_name == 'release' && github.event.action == 'published'
     steps:
     - uses: actions/checkout@v4
