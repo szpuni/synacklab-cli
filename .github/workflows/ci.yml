@@ -127,7 +127,7 @@ jobs:
       run: chmod +x ./bin/synacklab
     
     - name: Run integration tests
-      run: go test -v ./test/integration/...
+      run: go test -v -tags integration ./test/integration/...
       env:
         SYNACKLAB_BINARY: ./bin/synacklab
 
