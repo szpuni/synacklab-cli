@@ -80,13 +80,6 @@ jobs:
     #     key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
     #     restore-keys: |
     #       ${{ runner.os }}-go-
-    - name: Debug directory and permissions
-      run: |
-        pwd
-        ls -la 
-
-    - name: Debug directory structure
-      run: ls -R
   
     - name: Download dependencies
       run: go mod download
@@ -121,6 +114,14 @@ jobs:
     #   with:
     #     name: synacklab-binary
     #     path: ./bin/
+
+    - name: Debug directory and permissions
+      run: |
+        pwd
+        ls -la 
+
+    - name: Debug directory structure
+      run: ls -R
     
     - name: Make binary executable
       run: chmod +x ./bin/synacklab
