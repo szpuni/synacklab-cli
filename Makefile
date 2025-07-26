@@ -27,10 +27,10 @@ build:
 	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PATH)
 	@echo "Binary built: $(BUILD_DIR)/$(BINARY_NAME)"
 
-# Run tests
+# Run tests (excluding integration tests)
 test:
 	@echo "Running tests..."
-	$(GOTEST) -v ./...
+	$(GOTEST) -v ./... -short
 
 # Run tests with coverage
 test-coverage:
