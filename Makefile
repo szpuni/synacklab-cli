@@ -23,9 +23,7 @@ all: deps fmt vet test build
 # Build the binary
 build:
 	@echo "Building $(BINARY_NAME)..."
-	@mkdir -p $(MAIN_PATH)
-	@tree
-	@ls -al
+	@mkdir -p $(BUILD_DIR)
 	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PATH)
 	@echo "Binary built: $(BUILD_DIR)/$(BINARY_NAME)"
 
@@ -83,7 +81,7 @@ lint:
 # Run integration tests
 integration-test: build
 	@echo "Running integration tests..."
-	$(GOTEST) -v ./test/integration/...
+	$(GOTEST) -v -tags=integration ./test/integration/...
 
 # Development build (with debug info)
 dev-build:
