@@ -9,7 +9,7 @@
 *.dylib
 
 # Project-specific binaries
-synacklab
+/bin/synacklab
 synacklab-*
 bin/
 dist/

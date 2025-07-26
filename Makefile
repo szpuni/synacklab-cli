@@ -23,7 +23,7 @@ all: deps fmt vet test build
 # Build the binary
 build:
 	@echo "Building $(BINARY_NAME)..."
-	@mkdir -p $(BUILD_DIR) $(MAIN_PATH)
+	@mkdir -p $(MAIN_PATH)
 	@tree
 	@ls -al
 	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PATH)
@@ -47,7 +47,8 @@ clean:
 	$(GOCLEAN)
 	rm -rf $(BUILD_DIR)
 	rm -f coverage.out coverage.html
-	rm -f synacklab-test
+	rm -f synacklab-test synacklab
+
 
 # Install dependencies
 deps:
