@@ -5,7 +5,7 @@
 # Build variables
 BINARY_NAME=synacklab
 BUILD_DIR=./bin
-MAIN_PATH=./cmd/synacklab
+MAIN_PATH=./cmd/synacklab/main.go
 
 # Go parameters
 GOCMD=go
