@@ -47,6 +47,12 @@ func TestCLIIntegration(t *testing.T) {
 				t.Logf("Failed to remove test binary: %v", err)
 			}
 		}()
+	} else {
+		// Convert relative path to absolute path from project root
+		if !filepath.IsAbs(binaryPath) {
+			projectRoot := getProjectRoot()
+			binaryPath = filepath.Join(projectRoot, binaryPath)
+		}
 	}
 
 	tests := []struct {
@@ -83,12 +89,19 @@ func TestCLIIntegration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Logf("Using binary path: %s", binaryPath)
+			t.Logf("Running command: %s %v", binaryPath, tt.args)
+
 			cmd := exec.Command(binaryPath, tt.args...)
 			var out bytes.Buffer
 			cmd.Stdout = &out
 			cmd.Stderr = &out
 
 			err := cmd.Run()
+			t.Logf("Command exit code: %v", err)
+			t.Logf("Raw output length: %d", out.Len())
+			t.Logf("Raw output: %q", out.String())
+
 			// Help commands should exit with code 0
 			if err != nil && !strings.Contains(strings.Join(tt.args, " "), "--help") && len(tt.args) > 0 {
 				t.Fatalf("Command failed: %v", err)
