@@ -1,4 +1,4 @@
-version: 2
+# version: 2  # Remove version 2 as it's not supported by this GoReleaser version
 
 before:
   hooks:
