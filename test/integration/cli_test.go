@@ -76,9 +76,14 @@ func TestCLIIntegration(t *testing.T) {
 			expected: "auth",
 		},
 		{
-			name:     "aws-config help",
-			args:     []string{"auth", "aws-config", "--help"},
-			expected: "aws-config",
+			name:     "auth config help",
+			args:     []string{"auth", "config", "--help"},
+			expected: "Set a default AWS profile from existing SSO profiles",
+		},
+		{
+			name:     "auth sync help",
+			args:     []string{"auth", "sync", "--help"},
+			expected: "Authenticate with AWS SSO and sync all available profiles",
 		},
 		{
 			name:     "init help",

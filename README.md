@@ -4,9 +4,11 @@ A command-line tool for DevOps engineers to manage AWS SSO authentication and pr
 
 ## Features
 
-- 🔐 AWS SSO authentication
-- 📋 List available AWS profiles
+- 🔐 AWS SSO authentication with device authorization flow
+- 🔄 Sync all AWS SSO profiles to local configuration
+- 📋 List and select from available AWS profiles
 - ⚙️ Set default profile in `.aws/config`
+- 🔧 Merge or replace existing profiles
 - 🚀 Built with Go and Cobra framework
 
 ## Installation
@@ -48,26 +50,46 @@ go install
        region: "us-east-1"
    ```
 
-3. **Configure AWS SSO**:
+3. **Sync AWS SSO profiles**:
    ```bash
-   synacklab auth aws-config
+   synacklab auth sync
+   ```
+
+4. **Set default profile** (optional):
+   ```bash
+   synacklab auth config
    ```
 
 ## Usage
 
-### Configure AWS SSO Authentication
+### Sync AWS SSO Profiles
 
 ```bash
-synacklab auth aws-config
+synacklab auth sync
 ```
 
 This command will:
 1. Load configuration from `~/.synacklab/config.yaml` (if exists) or prompt for input
 2. Authenticate with AWS SSO using device authorization
-3. List all available AWS profiles (accounts + roles)
-4. Allow you to select a profile to set as default
-5. Update your `~/.aws/config` file with the selected profile
-6. Save SSO configuration for future use
+3. Fetch all available AWS profiles (accounts + roles) from SSO
+4. Create or update profiles in your `~/.aws/config` file
+5. Preserve existing non-SSO profiles by default
+
+#### Sync Options
+
+- `--config, -c`: Path to configuration file
+- `--reset`: Replace all profiles with AWS SSO profiles only (removes existing profiles)
+
+### Configure Default AWS Profile
+
+```bash
+synacklab auth config
+```
+
+This command will:
+1. List all available profiles from your `~/.aws/config` file
+2. Allow you to select a profile to set as default
+3. Update the `[default]` section in your AWS config
 
 #### Using Configuration File
 
@@ -91,26 +113,47 @@ synacklab auth aws-config --config /path/to/config.yaml
 - `--config, -c`: Path to configuration file
 - `--interactive, -i`: Force interactive mode even with config file
 
-### Example
+### Examples
+
+#### Sync AWS SSO Profiles
 
 ```bash
-$ synacklab auth aws-config
-🔐 Starting AWS SSO authentication...
-Enter your AWS SSO start URL: https://my-company.awsapps.com/start
-Enter your SSO region (default: us-east-1): us-west-2
+$ synacklab auth sync
+🔄 Starting AWS SSO profile synchronization...
+🔐 Authenticating with AWS SSO: https://my-company.awsapps.com/start
 
 🌐 Please visit: https://device.sso.us-west-2.amazonaws.com/
 📋 And enter code: ABCD-1234
 
 Press Enter after completing the authorization...
+📋 Found 5 profiles in AWS SSO
+📊 Added 3 new profiles, updated 2 existing profiles
+✅ Successfully synchronized 5 SSO profiles to AWS config
+```
+
+#### Reset All Profiles
+
+```bash
+$ synacklab auth sync --reset
+🔄 Starting AWS SSO profile synchronization...
+🔐 Authenticating with AWS SSO: https://my-company.awsapps.com/start
+🔄 Resetting AWS config file
+✅ Successfully replaced AWS config with 5 SSO profiles
+```
+
+#### Set Default Profile
+
+```bash
+$ synacklab auth config
+⚙️  Configuring AWS default profile...
 
 📋 Available AWS profiles:
-1. Production-AdministratorAccess (Account: 123456789012, Role: AdministratorAccess)
-2. Development-PowerUserAccess (Account: 987654321098, Role: PowerUserAccess)
-3. Staging-ReadOnlyAccess (Account: 456789012345, Role: ReadOnlyAccess)
+1. production-administratoraccess (Account: 123456789012, Role: AdministratorAccess)
+2. development-poweruseraccess (Account: 987654321098, Role: PowerUserAccess)
+3. staging-readonlyaccess (Account: 456789012345, Role: ReadOnlyAccess)
 
 Select profile number to set as default: 1
-✅ Successfully configured profile 'Production-AdministratorAccess' as default
+✅ Successfully set 'production-administratoraccess' as the default AWS profile
 ```
 
 ## Commands
@@ -118,7 +161,8 @@ Select profile number to set as default: 1
 - `synacklab` - Show help and available commands
 - `synacklab init` - Initialize synacklab configuration file
 - `synacklab auth` - Authentication commands
-- `synacklab auth aws-config` - Configure AWS SSO authentication
+- `synacklab auth sync` - Sync AWS SSO profiles to local configuration
+- `synacklab auth config` - Set default AWS profile from existing profiles
 
 ## Configuration
 
@@ -137,7 +181,7 @@ Copy `config.example.yaml` to `~/.synacklab/config.yaml` and customize it for yo
 
 ### AWS Configuration
 
-The tool updates your `~/.aws/config` file with the following format:
+The tool updates your `~/.aws/config` file with profiles for each account/role combination:
 
 ```ini
 [default]
@@ -147,7 +191,25 @@ sso_account_id = 123456789012
 sso_role_name = AdministratorAccess
 region = us-east-1
 output = json
+
+[profile production-administratoraccess]
+sso_start_url = https://your-company.awsapps.com/start
+sso_region = us-east-1
+sso_account_id = 123456789012
+sso_role_name = AdministratorAccess
+region = us-east-1
+output = json
+
+[profile development-poweruseraccess]
+sso_start_url = https://your-company.awsapps.com/start
+sso_region = us-east-1
+sso_account_id = 987654321098
+sso_role_name = PowerUserAccess
+region = us-east-1
+output = json
 ```
+
+Profile names are automatically sanitized (lowercase, spaces/underscores become hyphens).
 
 ## Development
 

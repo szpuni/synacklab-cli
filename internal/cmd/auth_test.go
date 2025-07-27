@@ -17,21 +17,34 @@ func TestAuthCommand(t *testing.T) {
 		t.Errorf("Unexpected Short description: %s", authCmd.Short)
 	}
 
-	if authCmd.Long != "Commands for managing authentication with various cloud providers" {
+	expectedLong := `Commands for managing authentication with various cloud providers.
+
+Available commands:
+  sync   - Sync AWS SSO profiles to local configuration
+  config - Set default AWS profile from existing profiles`
+
+	if authCmd.Long != expectedLong {
 		t.Errorf("Unexpected Long description: %s", authCmd.Long)
 	}
 
-	// Test that aws-config command is added
-	awsConfigCmdFound := false
+	// Test that config and sync commands are added
+	configCmdFound := false
+	syncCmdFound := false
 	for _, cmd := range authCmd.Commands() {
-		if cmd.Use == "aws-config" {
-			awsConfigCmdFound = true
-			break
+		if cmd.Use == "config" {
+			configCmdFound = true
+		}
+		if cmd.Use == "sync" {
+			syncCmdFound = true
 		}
 	}
 
-	if !awsConfigCmdFound {
-		t.Error("aws-config command not found in auth command")
+	if !configCmdFound {
+		t.Error("config command not found in auth command")
+	}
+
+	if !syncCmdFound {
+		t.Error("sync command not found in auth command")
 	}
 }
 
@@ -40,9 +53,14 @@ func TestAuthCommandHelp(t *testing.T) {
 	cmd := &cobra.Command{
 		Use:   "auth",
 		Short: "Authentication commands",
-		Long:  "Commands for managing authentication with various cloud providers",
+		Long: `Commands for managing authentication with various cloud providers.
+
+Available commands:
+  sync   - Sync AWS SSO profiles to local configuration
+  config - Set default AWS profile from existing profiles`,
 	}
 	cmd.AddCommand(awsConfigCmd)
+	cmd.AddCommand(awsSyncCmd)
 
 	// Test help output
 	buf := new(bytes.Buffer)
@@ -60,8 +78,12 @@ func TestAuthCommandHelp(t *testing.T) {
 		t.Errorf("Help output doesn't contain command name. Output: %s", output)
 	}
 
-	if !bytes.Contains([]byte(output), []byte("aws-config")) {
-		t.Errorf("Help output doesn't contain aws-config subcommand. Output: %s", output)
+	if !bytes.Contains([]byte(output), []byte("config")) {
+		t.Errorf("Help output doesn't contain config subcommand. Output: %s", output)
+	}
+
+	if !bytes.Contains([]byte(output), []byte("sync")) {
+		t.Errorf("Help output doesn't contain sync subcommand. Output: %s", output)
 	}
 }
 
@@ -71,18 +93,23 @@ func TestAuthCommandStructure(t *testing.T) {
 		t.Error("Auth command has no subcommands")
 	}
 
-	// Check that aws-config command exists as a subcommand
-	awsConfigFound := false
+	// Check that config and sync commands exist as subcommands
+	configFound := false
+	syncFound := false
 	for _, cmd := range authCmd.Commands() {
-		if cmd.Use == "aws-config" {
-			awsConfigFound = true
-			// The parent relationship is set when the command is added to root
-			// so we just verify the command exists in the auth command's children
-			break
+		if cmd.Use == "config" {
+			configFound = true
+		}
+		if cmd.Use == "sync" {
+			syncFound = true
 		}
 	}
 
-	if !awsConfigFound {
-		t.Error("aws-config command not found as subcommand of auth")
+	if !configFound {
+		t.Error("config command not found as subcommand of auth")
+	}
+
+	if !syncFound {
+		t.Error("sync command not found as subcommand of auth")
 	}
 }

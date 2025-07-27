@@ -18,7 +18,7 @@ GOFMT=gofmt
 GOVET=$(GOCMD) vet
 
 # Default target
-all: deps fmt vet test build
+all: deps fmt vet test-unit build
 
 # Build the binary
 build:
@@ -27,9 +27,12 @@ build:
 	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PATH)
 	@echo "Binary built: $(BUILD_DIR)/$(BINARY_NAME)"
 
-# Run tests (excluding integration tests)
-test:
-	@echo "Running tests..."
+# Run all tests (unit + integration)
+test: test-unit integration-test
+
+# Run unit tests only
+test-unit:
+	@echo "Running unit tests..."
 	$(GOTEST) -v ./... -short
 
 # Run tests with coverage
@@ -102,7 +105,8 @@ build-all:
 help:
 	@echo "Available targets:"
 	@echo "  build           - Build the binary"
-	@echo "  test            - Run tests"
+	@echo "  test            - Run all tests (unit + integration)"
+	@echo "  test-unit       - Run unit tests only"
 	@echo "  test-coverage   - Run tests with coverage report"
 	@echo "  clean           - Clean build artifacts"
 	@echo "  deps            - Install dependencies"

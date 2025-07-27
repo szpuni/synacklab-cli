@@ -12,7 +12,7 @@ var rootCmd = &cobra.Command{
 	Short: "A CLI tool for DevOps engineers to manage AWS SSO authentication",
 	Long: `Synacklab is a command-line tool designed for DevOps engineers to simplify
 AWS SSO authentication and profile management. It helps you authenticate with AWS SSO,
-list available profiles, and set default configurations.`,
+sync all available profiles, and set default configurations.`,
 }
 
 func Execute() {

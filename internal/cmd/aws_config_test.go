@@ -1,60 +1,62 @@
 package cmd
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
 	"gopkg.in/ini.v1"
 )
 
-func TestUpdateAWSConfig(t *testing.T) {
+func TestSetDefaultProfile(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config")
 
-	// Mock home directory
-	t.Setenv("HOME", tempDir)
+	// Create a test config with profiles
+	cfg := ini.Empty()
 
-	// Test profile
-	profile := AWSProfile{
-		Name:      "test-profile",
-		AccountID: "123456789012",
-		RoleName:  "TestRole",
-		Region:    "us-west-2",
-	}
-
-	ssoStartURL := "https://test.awsapps.com/start"
-	ssoRegion := "us-east-1"
-
-	// Test updateAWSConfig
-	err := updateAWSConfig(profile, ssoStartURL, ssoRegion)
+	// Add a test profile
+	profileSection, err := cfg.NewSection("profile test-profile")
 	if err != nil {
-		t.Fatalf("updateAWSConfig failed: %v", err)
+		t.Fatalf("Failed to create profile section: %v", err)
 	}
 
-	// Verify the config file was created and has correct content
-	configPath := filepath.Join(tempDir, ".aws", "config")
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		t.Fatal("Config file was not created")
-	}
+	profileSection.Key("sso_start_url").SetValue("https://test.awsapps.com/start")
+	profileSection.Key("sso_region").SetValue("us-east-1")
+	profileSection.Key("sso_account_id").SetValue("123456789012")
+	profileSection.Key("sso_role_name").SetValue("TestRole")
+	profileSection.Key("region").SetValue("us-west-2")
+	profileSection.Key("output").SetValue("json")
 
-	// Load and verify config content
-	cfg, err := ini.Load(configPath)
+	// Save the config
+	err = cfg.SaveTo(configPath)
 	if err != nil {
-		t.Fatalf("Failed to load config file: %v", err)
+		t.Fatalf("Failed to save test config: %v", err)
 	}
 
-	defaultSection := cfg.Section("default")
+	// Test setDefaultProfile
+	err = setDefaultProfile(cfg, "test-profile", configPath)
+	if err != nil {
+		t.Fatalf("setDefaultProfile failed: %v", err)
+	}
+
+	// Reload and verify the config
+	updatedCfg, err := ini.Load(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load updated config: %v", err)
+	}
+
+	defaultSection := updatedCfg.Section("default")
 
 	tests := []struct {
 		key      string
 		expected string
 	}{
-		{"sso_start_url", ssoStartURL},
-		{"sso_region", ssoRegion},
-		{"sso_account_id", profile.AccountID},
-		{"sso_role_name", profile.RoleName},
-		{"region", profile.Region},
+		{"sso_start_url", "https://test.awsapps.com/start"},
+		{"sso_region", "us-east-1"},
+		{"sso_account_id", "123456789012"},
+		{"sso_role_name", "TestRole"},
+		{"region", "us-west-2"},
 		{"output", "json"},
 	}
 
@@ -66,66 +68,61 @@ func TestUpdateAWSConfig(t *testing.T) {
 	}
 }
 
-func TestUpdateAWSConfigExistingFile(t *testing.T) {
+func TestSetDefaultProfileExistingDefault(t *testing.T) {
 	// Create a temporary directory for testing
 	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config")
 
-	// Mock home directory
-	t.Setenv("HOME", tempDir)
+	// Create a test config with existing default and profiles
+	cfg := ini.Empty()
 
-	// Create existing config file
-	awsDir := filepath.Join(tempDir, ".aws")
-	err := os.MkdirAll(awsDir, 0755)
+	// Add existing default section
+	defaultSection, err := cfg.NewSection("default")
 	if err != nil {
-		t.Fatalf("Failed to create .aws directory: %v", err)
+		t.Fatalf("Failed to create default section: %v", err)
 	}
+	defaultSection.Key("region").SetValue("us-east-1")
+	defaultSection.Key("output").SetValue("table")
 
-	configPath := filepath.Join(awsDir, "config")
-	existingConfig := `[default]
-region = us-east-1
-output = table
-
-[profile existing]
-region = eu-west-1
-`
-	err = os.WriteFile(configPath, []byte(existingConfig), 0644)
+	// Add a test profile
+	profileSection, err := cfg.NewSection("profile new-profile")
 	if err != nil {
-		t.Fatalf("Failed to create existing config: %v", err)
+		t.Fatalf("Failed to create profile section: %v", err)
 	}
 
-	// Test profile
-	profile := AWSProfile{
-		Name:      "new-profile",
-		AccountID: "987654321098",
-		RoleName:  "NewRole",
-		Region:    "us-west-1",
-	}
+	profileSection.Key("sso_start_url").SetValue("https://new.awsapps.com/start")
+	profileSection.Key("sso_region").SetValue("us-west-2")
+	profileSection.Key("sso_account_id").SetValue("987654321098")
+	profileSection.Key("sso_role_name").SetValue("NewRole")
+	profileSection.Key("region").SetValue("us-west-1")
+	profileSection.Key("output").SetValue("json")
 
-	ssoStartURL := "https://new.awsapps.com/start"
-	ssoRegion := "us-west-2"
-
-	// Update config
-	err = updateAWSConfig(profile, ssoStartURL, ssoRegion)
+	// Save the config
+	err = cfg.SaveTo(configPath)
 	if err != nil {
-		t.Fatalf("updateAWSConfig failed: %v", err)
+		t.Fatalf("Failed to save test config: %v", err)
 	}
 
-	// Verify the config file was updated correctly
-	cfg, err := ini.Load(configPath)
+	// Test setDefaultProfile
+	err = setDefaultProfile(cfg, "new-profile", configPath)
 	if err != nil {
-		t.Fatalf("Failed to load updated config file: %v", err)
+		t.Fatalf("setDefaultProfile failed: %v", err)
 	}
 
-	// Check default section was updated
-	defaultSection := cfg.Section("default")
-	if defaultSection.Key("sso_start_url").String() != ssoStartURL {
-		t.Errorf("Expected sso_start_url = %s, got %s", ssoStartURL, defaultSection.Key("sso_start_url").String())
+	// Reload and verify the config
+	updatedCfg, err := ini.Load(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load updated config: %v", err)
 	}
 
-	// Check existing profile section still exists
-	existingSection := cfg.Section("profile existing")
-	if existingSection.Key("region").String() != "eu-west-1" {
-		t.Error("Existing profile section was modified or removed")
+	defaultSection = updatedCfg.Section("default")
+
+	// Check that default section was updated with new profile values
+	if defaultSection.Key("sso_start_url").String() != "https://new.awsapps.com/start" {
+		t.Errorf("Expected sso_start_url to be updated")
+	}
+	if defaultSection.Key("sso_account_id").String() != "987654321098" {
+		t.Errorf("Expected sso_account_id to be updated")
 	}
 }
 
