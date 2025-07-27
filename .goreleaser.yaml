@@ -38,26 +38,26 @@ archives:
       - config.example.yaml
 
 checksum:
-  name_template: 'checksums.txt'
+  name_template: "checksums.txt"
 
 snapshot:
-  version_template: "{{ incpatch .Version }}-next"
+  name_template: "{{ incpatch .Version }}-next"
 
 changelog:
   sort: asc
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
-      - '^ci:'
-      - '^chore:'
-      - '^style:'
-      - '^refactor:'
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - "^style:"
+      - "^refactor:"
   groups:
     - title: Features
       regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
       order: 0
-    - title: 'Bug fixes'
+    - title: "Bug fixes"
       regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
       order: 1
     - title: Others
@@ -69,23 +69,23 @@ release:
   name_template: "{{.ProjectName}} v{{.Version}}"
   header: |
     ## What's Changed
-    
+
     This release includes the following changes:
   footer: |
     ## Installation
-    
+
     ### Download Binary
     Download the appropriate binary for your platform from the assets below.
-    
+
     ### Using Go Install
     ```bash
     go install github.com/synacklab/synacklab/cmd/synacklab@{{.Tag}}
     ```
-    
+
     ### Package Managers
     - **Debian/Ubuntu**: Download the `.deb` file and install with `sudo dpkg -i synacklab_*.deb`
     - **RHEL/CentOS/Fedora**: Download the `.rpm` file and install with `sudo rpm -i synacklab_*.rpm`
-    
+
     ## Checksums
     All binaries are signed and checksums are provided in `checksums.txt`.
 
