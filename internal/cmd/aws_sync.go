@@ -128,7 +128,7 @@ func loadAppConfig() (*config.Config, error) {
 		if appConfig.AWS.SSO.Region == "" {
 			fmt.Print("Enter your SSO region (default: us-east-1): ")
 			var region string
-			fmt.Scanln(&region) // Ignore error for optional input
+			_, _ = fmt.Scanln(&region) // Ignore error for optional input
 			if region == "" {
 				region = "us-east-1"
 			}
@@ -182,7 +182,7 @@ func authenticateSSO(appConfig *config.Config) (*SSOSession, error) {
 	fmt.Printf("\n🌐 Please visit: %s\n", *deviceAuthResp.VerificationUriComplete)
 	fmt.Printf("📋 And enter code: %s\n", *deviceAuthResp.UserCode)
 	fmt.Println("\nPress Enter after completing the authorization...")
-	fmt.Scanln() // Wait for user input
+	_, _ = fmt.Scanln() // Wait for user input
 
 	// Create token
 	tokenResp, err := ssooidcClient.CreateToken(context.TODO(), &ssooidc.CreateTokenInput{
