@@ -17,4 +17,5 @@ Available commands:
 func init() {
 	authCmd.AddCommand(awsConfigCmd)
 	authCmd.AddCommand(awsSyncCmd)
+	authCmd.AddCommand(eksConfigCmd)
 }
