@@ -90,6 +90,11 @@ func TestCLIIntegration(t *testing.T) {
 			args:     []string{"init", "--help"},
 			expected: "init",
 		},
+		{
+			name:     "auth eks-ctx help",
+			args:     []string{"auth", "eks-ctx", "--help"},
+			expected: "Switch between Kubernetes contexts",
+		},
 	}
 
 	for _, tt := range tests {

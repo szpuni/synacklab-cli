@@ -72,8 +72,9 @@ type KubeContext struct {
 }
 
 type KubeContextConfig struct {
-	Cluster string `yaml:"cluster"`
-	User    string `yaml:"user"`
+	Cluster   string `yaml:"cluster"`
+	User      string `yaml:"user"`
+	Namespace string `yaml:"namespace,omitempty"`
 }
 
 type KubeUser struct {
