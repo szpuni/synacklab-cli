@@ -31,12 +31,19 @@ jobs:
         go mod download
         go test -v -race ./...
 
+    - name: Delete existing release if exists
+      run: |
+        # Delete release if it exists
+        gh release delete ${{ github.ref_name }} --yes || true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Run GoReleaser
       uses: goreleaser/goreleaser-action@v5
       with:
         distribution: goreleaser
         version: v1.24.0
-        args: release --clean --skip-validate
+        args: release --clean
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
