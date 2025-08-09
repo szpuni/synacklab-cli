@@ -1,0 +1,24 @@
+# Simple repository configuration for basic testing
+# This configuration has minimal settings to test basic functionality
+
+name: simple-test-repo
+description: A simple test repository with minimal configuration
+private: false
+
+topics:
+  - testing
+  - simple
+
+features:
+  issues: true
+  wiki: false
+  projects: false
+  discussions: false
+
+branch_protection:
+  - pattern: main
+    required_reviews: 1
+    dismiss_stale_reviews: false
+    require_code_owner_review: false
+    required_status_checks: []
+    require_up_to_date: false

@@ -86,6 +86,19 @@ integration-test: build
 	@echo "Running integration tests..."
 	$(GOTEST) -v -tags=integration ./test/integration/...
 
+# Run GitHub E2E integration tests (requires GITHUB_TOKEN and GITHUB_TEST_ORG)
+github-e2e-test: build
+	@echo "Running GitHub E2E integration tests..."
+	@if [ -z "$(GITHUB_TOKEN)" ]; then \
+		echo "Error: GITHUB_TOKEN environment variable is required"; \
+		exit 1; \
+	fi
+	@if [ -z "$(GITHUB_TEST_ORG)" ]; then \
+		echo "Error: GITHUB_TEST_ORG environment variable is required"; \
+		exit 1; \
+	fi
+	GITHUB_E2E_TESTS=true $(GOTEST) -v -tags="integration,github_e2e" ./test/integration/...
+
 # Development build (with debug info)
 dev-build:
 	@echo "Building development version..."
@@ -115,6 +128,7 @@ help:
 	@echo "  vet             - Vet code"
 	@echo "  lint            - Lint code (requires golangci-lint)"
 	@echo "  integration-test- Run integration tests"
+	@echo "  github-e2e-test - Run GitHub E2E tests (requires GITHUB_TOKEN and GITHUB_TEST_ORG)"
 	@echo "  dev-build       - Build with debug info"
 	@echo "  build-all       - Cross-compile for multiple platforms"
 	@echo "  help            - Show this help"

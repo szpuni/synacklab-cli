@@ -1,0 +1,66 @@
+# Team-Focused GitHub Repository Configuration
+# This example shows a repository optimized for team collaboration
+
+name: team-project
+description: "A collaborative project repository with team-based access control"
+private: true
+
+topics:
+  - team-project
+  - collaboration
+  - internal
+
+# Enable collaboration features
+features:
+  issues: true
+  wiki: true
+  projects: true
+  discussions: true
+
+# Strong branch protection for team collaboration
+branch_protection:
+  - pattern: "main"
+    required_status_checks:
+      - "ci/build"
+      - "ci/test"
+      - "ci/lint"
+    require_up_to_date: true
+    required_reviews: 2
+    dismiss_stale_reviews: true
+    require_code_owner_review: true
+
+  - pattern: "feature/*"
+    required_status_checks:
+      - "ci/build"
+      - "ci/test"
+    require_up_to_date: false
+    required_reviews: 1
+    dismiss_stale_reviews: false
+    require_code_owner_review: false
+
+# Team-based access control
+teams:
+  - team: "product-team"
+    permission: "write"
+  - team: "engineering-leads"
+    permission: "admin"
+  - team: "qa-team"
+    permission: "write"
+  - team: "design-team"
+    permission: "read"
+
+# Key individual contributors
+collaborators:
+  - username: "tech-lead"
+    permission: "admin"
+  - username: "product-manager"
+    permission: "write"
+
+# Team communication webhooks
+webhooks:
+  - url: "https://hooks.slack.com/services/TEAM/CHANNEL/TOKEN"
+    events:
+      - "push"
+      - "pull_request"
+      - "issues"
+    active: true

@@ -26,4 +26,5 @@ func init() {
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(eksConfigCmd)
+	rootCmd.AddCommand(githubCmd)
 }

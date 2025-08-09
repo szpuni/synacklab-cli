@@ -1,0 +1,215 @@
+# GitHub Repository Configuration Reference
+# This file documents all available configuration options with detailed explanations
+
+# ==============================================================================
+# REPOSITORY BASIC SETTINGS
+# ==============================================================================
+
+# Repository name (required)
+# Must follow GitHub naming conventions: alphanumeric, hyphens, underscores
+# Cannot start or end with hyphen, cannot contain consecutive hyphens
+name: "my-repository"
+
+# Repository description (optional)
+# Brief description of the repository purpose and contents
+# Displayed on the repository page and in search results
+description: "A comprehensive example of GitHub repository configuration"
+
+# Repository visibility (required)
+# true = private repository (only accessible to collaborators)
+# false = public repository (visible to everyone)
+private: true
+
+# Repository topics (optional)
+# Array of topic strings for repository categorization and discovery
+# Topics help users find repositories and understand their purpose
+# Maximum 20 topics, each topic max 35 characters, lowercase, alphanumeric + hyphens
+topics:
+  - "devops"
+  - "infrastructure"
+  - "automation"
+
+# ==============================================================================
+# REPOSITORY FEATURES
+# ==============================================================================
+
+# Repository features configuration (optional)
+# Controls which GitHub features are enabled for the repository
+features:
+  # GitHub Issues - bug tracking and feature requests
+  # true = enable issues tab and functionality
+  # false = disable issues (issues tab hidden)
+  issues: true
+  
+  # Repository Wiki - documentation and knowledge base
+  # true = enable wiki tab and wiki functionality
+  # false = disable wiki (wiki tab hidden)
+  wiki: true
+  
+  # GitHub Projects - project management boards
+  # true = enable projects tab and project boards
+  # false = disable projects (projects tab hidden)
+  projects: true
+  
+  # GitHub Discussions - community conversations
+  # true = enable discussions tab and discussion functionality
+  # false = disable discussions (discussions tab hidden)
+  discussions: false
+
+# ==============================================================================
+# BRANCH PROTECTION RULES
+# ==============================================================================
+
+# Branch protection rules (optional)
+# Array of protection rules applied to branches matching specified patterns
+# Enforces code quality and review processes
+branch_protection:
+  # Protection rule for main branch
+  - pattern: "main"  # Branch pattern (supports glob patterns like "release/*")
+    
+    # Required status checks (optional)
+    # Array of status check names that must pass before merging
+    # These typically come from CI/CD systems, security scans, etc.
+    required_status_checks:
+      - "ci/build"           # Build must pass
+      - "ci/test"            # Tests must pass
+      - "security/scan"      # Security scan must pass
+    
+    # Require branches to be up to date (optional, default: false)
+    # true = branch must be up to date with base branch before merging
+    # false = allow merging even if branch is behind base branch
+    require_up_to_date: true
+    
+    # Required number of reviews (optional, default: 0)
+    # Minimum number of approving reviews required before merging
+    # 0 = no reviews required, 1-6 = number of required reviews
+    required_reviews: 2
+    
+    # Dismiss stale reviews (optional, default: false)
+    # true = dismiss approving reviews when new commits are pushed
+    # false = keep approving reviews even with new commits
+    dismiss_stale_reviews: true
+    
+    # Require code owner review (optional, default: false)
+    # true = require review from code owners (defined in CODEOWNERS file)
+    # false = code owner review not required
+    require_code_owner_review: true
+    
+    # Restrict pushes (optional)
+    # Array of users/teams allowed to push to protected branch
+    # Empty array or omitted = no push restrictions
+    restrict_pushes:
+      - "admin-team"
+      - "release-managers"
+
+  # Protection rule for release branches
+  - pattern: "release/*"
+    required_status_checks:
+      - "ci/build"
+      - "ci/test"
+    require_up_to_date: true
+    required_reviews: 1
+    dismiss_stale_reviews: false
+    require_code_owner_review: true
+
+# ==============================================================================
+# ACCESS CONTROL - INDIVIDUAL COLLABORATORS
+# ==============================================================================
+
+# Individual collaborator access (optional)
+# Array of users with direct repository access
+# Use for external contributors or specific individual access needs
+collaborators:
+  # Individual collaborator entry
+  - username: "john-doe"        # GitHub username (required)
+    permission: "write"         # Permission level (required)
+    # Permission levels:
+    # "read" = can view and clone repository
+    # "write" = can push to repository and manage issues/PRs
+    # "admin" = full repository access including settings
+  
+  - username: "external-contributor"
+    permission: "read"
+
+# ==============================================================================
+# ACCESS CONTROL - TEAM ACCESS
+# ==============================================================================
+
+# Team-based access control (optional)
+# Array of organization teams with repository access
+# Preferred method for managing access in organizations
+teams:
+  # Team access entry
+  - team: "backend-team"        # Team slug (required)
+    permission: "write"         # Permission level (required)
+    # Permission levels same as collaborators: "read", "write", "admin"
+  
+  - team: "devops-team"
+    permission: "admin"
+  
+  - team: "security-team"
+    permission: "read"
+
+# ==============================================================================
+# WEBHOOKS
+# ==============================================================================
+
+# Webhook configurations (optional)
+# Array of webhooks for integrating with external services
+# Webhooks send HTTP POST requests when specified events occur
+webhooks:
+  # CI/CD integration webhook
+  - url: "https://ci.example.com/webhook/github"  # Webhook URL (required)
+    
+    # Events that trigger the webhook (required)
+    # Array of GitHub event names
+    events:
+      - "push"              # Code pushed to repository
+      - "pull_request"      # Pull request opened, closed, etc.
+      - "release"           # Release published
+      - "issues"            # Issue opened, closed, etc.
+      - "member"            # Collaborator added/removed
+      - "repository"        # Repository settings changed
+    
+    # Webhook secret (optional)
+    # Secret used to validate webhook payload authenticity
+    # Can use environment variable substitution: ${VAR_NAME}
+    secret: "${WEBHOOK_SECRET_CI}"
+    
+    # Webhook active status (optional, default: true)
+    # true = webhook is active and will send requests
+    # false = webhook is disabled
+    active: true
+
+  # Slack notification webhook
+  - url: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+    events:
+      - "push"
+      - "pull_request"
+      - "issues"
+    active: true
+
+# ==============================================================================
+# CONFIGURATION NOTES
+# ==============================================================================
+
+# Environment Variable Substitution:
+# Use ${VAR_NAME} syntax to substitute environment variables
+# Useful for secrets like webhook secrets or tokens
+# Example: secret: "${GITHUB_WEBHOOK_SECRET}"
+
+# Validation Rules:
+# - Repository name must be unique within the organization/user account
+# - Branch patterns support glob syntax (* and ? wildcards)
+# - Usernames and team slugs must exist in the GitHub organization
+# - Webhook URLs must be valid HTTP/HTTPS URLs
+# - Permission levels must be exactly "read", "write", or "admin"
+# - Topics must be lowercase, max 35 characters each, max 20 topics total
+
+# Best Practices:
+# - Use team-based access control instead of individual collaborators when possible
+# - Enable branch protection on main/master and release branches
+# - Require status checks for important branches
+# - Use meaningful repository descriptions and topics
+# - Keep webhook secrets in environment variables, not in config files
+# - Test webhook URLs before adding them to configuration

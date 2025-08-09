@@ -10,7 +10,8 @@ import (
 
 // Config represents the synacklab configuration
 type Config struct {
-	AWS AWSConfig `yaml:"aws"`
+	AWS    AWSConfig    `yaml:"aws"`
+	GitHub GitHubConfig `yaml:"github"`
 }
 
 // AWSConfig represents AWS-specific configuration
@@ -22,6 +23,12 @@ type AWSConfig struct {
 type SSOConfig struct {
 	StartURL string `yaml:"start_url"`
 	Region   string `yaml:"region"`
+}
+
+// GitHubConfig represents GitHub-specific configuration
+type GitHubConfig struct {
+	Token        string `yaml:"token,omitempty"`
+	Organization string `yaml:"organization,omitempty"`
 }
 
 // LoadConfig loads configuration from the default location
@@ -101,6 +108,15 @@ func (c *Config) Validate() error {
 
 	if c.AWS.SSO.Region == "" {
 		return fmt.Errorf("AWS SSO region is required")
+	}
+
+	return nil
+}
+
+// ValidateGitHub validates GitHub-specific configuration
+func (c *Config) ValidateGitHub() error {
+	if c.GitHub.Token == "" {
+		return fmt.Errorf("GitHub token is required")
 	}
 
 	return nil

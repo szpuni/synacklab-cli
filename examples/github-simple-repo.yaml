@@ -1,0 +1,20 @@
+# Simple GitHub Repository Configuration
+# This example shows a basic repository setup with minimal configuration
+
+# Repository basic settings
+name: my-simple-repo
+description: "A simple example repository managed by synacklab"
+private: false
+
+# Repository topics for discoverability
+topics:
+  - example
+  - synacklab
+  - devops
+
+# Repository features
+features:
+  issues: true
+  wiki: false
+  projects: false
+  discussions: false

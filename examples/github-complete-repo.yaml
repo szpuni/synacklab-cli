@@ -1,0 +1,107 @@
+# Complete GitHub Repository Configuration
+# This example demonstrates all available configuration options
+
+# Repository basic settings
+name: my-complete-repo
+description: "A comprehensive example repository with all features configured"
+private: true
+
+# Repository topics for discoverability and organization
+topics:
+  - production
+  - microservice
+  - golang
+  - api
+  - kubernetes
+
+# Repository features configuration
+features:
+  issues: true          # Enable GitHub Issues
+  wiki: true           # Enable repository wiki
+  projects: true       # Enable GitHub Projects
+  discussions: true    # Enable GitHub Discussions
+
+# Branch protection rules
+branch_protection:
+  # Protect main branch with comprehensive rules
+  - pattern: "main"
+    required_status_checks:
+      - "ci/build"
+      - "ci/test"
+      - "security/scan"
+    require_up_to_date: true
+    required_reviews: 2
+    dismiss_stale_reviews: true
+    require_code_owner_review: true
+    restrict_pushes:
+      - "admin-team"
+      - "release-team"
+
+  # Protect release branches with different rules
+  - pattern: "release/*"
+    required_status_checks:
+      - "ci/build"
+      - "ci/test"
+    require_up_to_date: true
+    required_reviews: 1
+    dismiss_stale_reviews: false
+    require_code_owner_review: true
+
+  # Protect development branch with minimal rules
+  - pattern: "develop"
+    required_status_checks:
+      - "ci/build"
+    require_up_to_date: false
+    required_reviews: 1
+    dismiss_stale_reviews: false
+    require_code_owner_review: false
+
+# Individual collaborator access
+collaborators:
+  - username: "john-doe"
+    permission: "write"
+  - username: "jane-smith"
+    permission: "admin"
+  - username: "external-contributor"
+    permission: "read"
+
+# Team-based access control
+teams:
+  - team: "backend-team"
+    permission: "write"
+  - team: "frontend-team"
+    permission: "write"
+  - team: "devops-team"
+    permission: "admin"
+  - team: "security-team"
+    permission: "read"
+
+# Webhook configurations
+webhooks:
+  # CI/CD webhook
+  - url: "https://ci.example.com/webhook/github"
+    events:
+      - "push"
+      - "pull_request"
+      - "release"
+    secret: "${WEBHOOK_SECRET_CI}"
+    active: true
+
+  # Slack notification webhook
+  - url: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+    events:
+      - "push"
+      - "issues"
+      - "pull_request"
+      - "release"
+    active: true
+
+  # Security monitoring webhook
+  - url: "https://security.example.com/github-webhook"
+    events:
+      - "push"
+      - "pull_request"
+      - "member"
+      - "repository"
+    secret: "${WEBHOOK_SECRET_SECURITY}"
+    active: true

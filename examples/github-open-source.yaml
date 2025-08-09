@@ -1,0 +1,65 @@
+# Open Source GitHub Repository Configuration
+# This example shows configuration for a public open source project
+
+name: awesome-open-source-project
+description: "An open source project welcoming community contributions"
+private: false
+
+# Open source friendly topics
+topics:
+  - open-source
+  - community
+  - golang
+  - cli-tool
+  - devops
+
+# Enable all community features
+features:
+  issues: true
+  wiki: true
+  projects: true
+  discussions: true
+
+# Balanced branch protection for open source
+branch_protection:
+  - pattern: "main"
+    required_status_checks:
+      - "ci/build"
+      - "ci/test"
+      - "ci/security-scan"
+    require_up_to_date: true
+    required_reviews: 1
+    dismiss_stale_reviews: true
+    require_code_owner_review: true
+
+# Core maintainer team
+teams:
+  - team: "maintainers"
+    permission: "admin"
+  - team: "contributors"
+    permission: "write"
+
+# Trusted external contributors
+collaborators:
+  - username: "trusted-contributor-1"
+    permission: "write"
+  - username: "trusted-contributor-2"
+    permission: "write"
+
+# Community and CI webhooks
+webhooks:
+  # CI/CD pipeline
+  - url: "https://ci.example.com/webhook/oss-project"
+    events:
+      - "push"
+      - "pull_request"
+    active: true
+
+  # Community notifications
+  - url: "https://discord.com/api/webhooks/123456789/abcdefghijklmnop"
+    events:
+      - "issues"
+      - "pull_request"
+      - "release"
+      - "discussions"
+    active: true

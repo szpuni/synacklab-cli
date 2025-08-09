@@ -1,0 +1,74 @@
+# Example repository configuration for testing
+# This file can be used for manual testing of the GitHub commands
+
+name: example-test-repository
+description: An example repository configuration for testing synacklab GitHub functionality
+private: true
+
+# Repository topics (optional)
+topics:
+  - testing
+  - synacklab
+  - example
+  - golang
+
+# Repository features
+features:
+  issues: true
+  wiki: false
+  projects: true
+  discussions: false
+
+# Branch protection rules
+branch_protection:
+  - pattern: main
+    required_reviews: 2
+    dismiss_stale_reviews: true
+    require_code_owner_review: true
+    required_status_checks:
+      - ci/build
+      - ci/test
+      - ci/lint
+    require_up_to_date: true
+    restrict_pushes:
+      - admin-team
+
+  - pattern: develop
+    required_reviews: 1
+    dismiss_stale_reviews: false
+    require_code_owner_review: false
+    required_status_checks:
+      - ci/build
+    require_up_to_date: false
+
+# Collaborators (individual users)
+collaborators:
+  - username: example-user
+    permission: write
+  - username: another-user
+    permission: read
+
+# Team access (organization teams)
+teams:
+  - team: developers
+    permission: write
+  - team: admins
+    permission: admin
+  - team: reviewers
+    permission: read
+
+# Webhooks
+webhooks:
+  - url: https://example.com/webhook/push
+    events:
+      - push
+      - pull_request
+    active: true
+  
+  - url: https://ci.example.com/github-webhook
+    events:
+      - push
+      - pull_request
+      - release
+    active: true
+    # Note: webhook secrets should be managed securely in production

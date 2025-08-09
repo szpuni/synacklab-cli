@@ -9,6 +9,9 @@ A command-line tool for DevOps engineers to manage AWS SSO authentication and pr
 - 📋 List and select from available AWS profiles
 - ⚙️ Set default profile in `.aws/config`
 - 🔧 Merge or replace existing profiles
+- 🐙 GitHub repository management with declarative configuration
+- 🛡️ Branch protection rules and access control management
+- 🔗 Webhook configuration and team-based permissions
 - 🚀 Built with Go and Cobra framework
 
 ## Installation
@@ -163,6 +166,9 @@ Select profile number to set as default: 1
 - `synacklab auth` - Authentication commands
 - `synacklab auth sync` - Sync AWS SSO profiles to local configuration
 - `synacklab auth config` - Set default AWS profile from existing profiles
+- `synacklab github` - GitHub repository management commands
+- `synacklab github apply` - Apply repository configuration from YAML file
+- `synacklab github validate` - Validate repository configuration file
 
 ## Configuration
 
@@ -210,6 +216,307 @@ output = json
 ```
 
 Profile names are automatically sanitized (lowercase, spaces/underscores become hyphens).
+
+## GitHub Repository Management
+
+Synacklab provides declarative GitHub repository management using YAML configuration files. This feature allows you to define repository settings, branch protection rules, access control, and webhooks as code, enabling Infrastructure as Code practices for GitHub repository management.
+
+### Quick Start
+
+1. **Set up GitHub authentication**:
+   ```bash
+   export GITHUB_TOKEN="your_github_token"
+   ```
+   Or configure in `~/.synacklab/config.yaml`:
+   ```yaml
+   github:
+     token: "your_github_token"
+     organization: "your-org"  # optional
+   ```
+
+2. **Create a repository configuration file**:
+   ```yaml
+   # my-repo.yaml
+   name: my-awesome-repo
+   description: "An example repository managed by synacklab"
+   private: false
+   
+   features:
+     issues: true
+     wiki: true
+     projects: false
+     discussions: false
+   
+   branch_protection:
+     - pattern: "main"
+       required_status_checks:
+         - "ci/build"
+         - "ci/test"
+       required_reviews: 2
+       require_code_owner_review: true
+   ```
+
+3. **Apply the configuration**:
+   ```bash
+   synacklab github apply my-repo.yaml
+   ```
+
+4. **Validate configuration before applying**:
+   ```bash
+   synacklab github validate my-repo.yaml
+   ```
+
+### GitHub Commands
+
+#### Apply Repository Configuration
+
+```bash
+synacklab github apply <config-file.yaml>
+```
+
+Creates a new repository or updates an existing repository to match the configuration file.
+
+**Options:**
+- `--dry-run`: Preview changes without applying them
+- `--config, -c`: Path to synacklab configuration file
+
+**Examples:**
+
+```bash
+# Apply configuration to create/update repository
+synacklab github apply examples/github-simple-repo.yaml
+
+# Preview changes without applying
+synacklab github apply examples/github-complete-repo.yaml --dry-run
+
+# Use custom synacklab config file
+synacklab github apply my-repo.yaml --config /path/to/config.yaml
+```
+
+#### Validate Repository Configuration
+
+```bash
+synacklab github validate <config-file.yaml>
+```
+
+Validates the repository configuration file for syntax errors, required fields, and GitHub-specific constraints.
+
+**Examples:**
+
+```bash
+# Validate a configuration file
+synacklab github validate examples/github-complete-repo.yaml
+
+# Validate with detailed output
+synacklab github validate my-repo.yaml --verbose
+```
+
+### Configuration File Format
+
+Repository configuration files use YAML format with the following structure:
+
+#### Basic Repository Settings
+
+```yaml
+# Repository name (required)
+name: "my-repository"
+
+# Repository description (optional)
+description: "A brief description of the repository"
+
+# Repository visibility (required)
+private: true  # true for private, false for public
+
+# Repository topics for discoverability (optional)
+topics:
+  - "golang"
+  - "cli"
+  - "devops"
+
+# Repository features (optional)
+features:
+  issues: true      # Enable GitHub Issues
+  wiki: false       # Enable repository wiki
+  projects: true    # Enable GitHub Projects
+  discussions: false # Enable GitHub Discussions
+```
+
+#### Branch Protection Rules
+
+```yaml
+branch_protection:
+  - pattern: "main"  # Branch pattern (supports glob patterns)
+    required_status_checks:
+      - "ci/build"
+      - "ci/test"
+    require_up_to_date: true
+    required_reviews: 2
+    dismiss_stale_reviews: true
+    require_code_owner_review: true
+    restrict_pushes:
+      - "admin-team"
+```
+
+#### Access Control
+
+```yaml
+# Individual collaborator access
+collaborators:
+  - username: "john-doe"
+    permission: "write"  # read, write, admin
+
+# Team-based access control
+teams:
+  - team: "backend-team"
+    permission: "write"
+  - team: "devops-team"
+    permission: "admin"
+```
+
+#### Webhooks
+
+```yaml
+webhooks:
+  - url: "https://ci.example.com/webhook/github"
+    events:
+      - "push"
+      - "pull_request"
+      - "release"
+    secret: "${WEBHOOK_SECRET}"  # Environment variable substitution
+    active: true
+```
+
+### Authentication Setup
+
+#### GitHub Token Authentication
+
+1. **Create a GitHub Personal Access Token**:
+   - Go to GitHub Settings → Developer settings → Personal access tokens
+   - Generate a new token with the following scopes:
+     - `repo` (Full control of private repositories)
+     - `admin:org` (Full control of orgs and teams, read and write org projects)
+     - `admin:repo_hook` (Full control of repository hooks)
+
+2. **Configure the token**:
+
+   **Option 1: Environment Variable (Recommended)**
+   ```bash
+   export GITHUB_TOKEN="ghp_your_token_here"
+   ```
+
+   **Option 2: Configuration File**
+   ```yaml
+   # ~/.synacklab/config.yaml
+   github:
+     token: "ghp_your_token_here"
+     organization: "your-organization"  # optional, for organization repositories
+   ```
+
+#### Required Permissions
+
+Your GitHub token needs the following permissions:
+
+- **Repository permissions**: Create, read, update repositories
+- **Administration permissions**: Manage repository settings, branch protection
+- **Organization permissions**: Manage team access (for organization repositories)
+- **Webhook permissions**: Create and manage webhooks
+
+### Example Configurations
+
+The `examples/` directory contains several example configuration files:
+
+- **`examples/github-simple-repo.yaml`**: Basic repository with minimal configuration
+- **`examples/github-complete-repo.yaml`**: Comprehensive example showing all features
+- **`examples/github-team-repo.yaml`**: Team-focused repository with collaboration features
+- **`examples/github-open-source.yaml`**: Open source project configuration
+- **`examples/github-config-reference.yaml`**: Complete reference with inline documentation
+
+### Common Workflows
+
+#### Creating a New Repository
+
+1. Create a configuration file:
+   ```yaml
+   name: new-project
+   description: "A new project repository"
+   private: true
+   
+   features:
+     issues: true
+     projects: true
+   
+   teams:
+     - team: "development-team"
+       permission: "write"
+   ```
+
+2. Apply the configuration:
+   ```bash
+   synacklab github apply new-project.yaml
+   ```
+
+#### Updating Repository Settings
+
+1. Modify your existing configuration file
+2. Preview changes:
+   ```bash
+   synacklab github apply my-repo.yaml --dry-run
+   ```
+3. Apply changes:
+   ```bash
+   synacklab github apply my-repo.yaml
+   ```
+
+#### Managing Multiple Repositories
+
+Create separate configuration files for each repository and apply them individually, or use a script to apply multiple configurations:
+
+```bash
+#!/bin/bash
+for config in configs/*.yaml; do
+  echo "Applying $config..."
+  synacklab github apply "$config"
+done
+```
+
+### Best Practices
+
+1. **Use version control**: Store configuration files in Git repositories
+2. **Environment variables**: Use environment variables for secrets (webhook secrets, tokens)
+3. **Team-based access**: Prefer team-based access over individual collaborators
+4. **Branch protection**: Always protect main/master branches in production repositories
+5. **Validation**: Always validate configurations before applying
+6. **Dry-run**: Use `--dry-run` to preview changes before applying
+7. **Documentation**: Use meaningful descriptions and topics for repositories
+
+### Troubleshooting
+
+#### Authentication Issues
+
+```bash
+# Check if token is set
+echo $GITHUB_TOKEN
+
+# Validate token permissions
+synacklab github validate --check-auth
+```
+
+#### Permission Errors
+
+Ensure your GitHub token has the required scopes:
+- `repo` for repository management
+- `admin:org` for organization and team management
+- `admin:repo_hook` for webhook management
+
+#### Configuration Validation
+
+```bash
+# Validate configuration syntax
+synacklab github validate my-repo.yaml
+
+# Check for common issues
+synacklab github validate my-repo.yaml --verbose
+```
 
 ## Development
 

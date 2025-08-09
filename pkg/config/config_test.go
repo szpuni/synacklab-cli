@@ -16,6 +16,9 @@ func TestLoadConfig(t *testing.T) {
   sso:
     start_url: "https://test.awsapps.com/start"
     region: "us-west-2"
+github:
+  token: "ghp_test_token"
+  organization: "test-org"
 `
 	err := os.WriteFile(configPath, []byte(configContent), 0644)
 	if err != nil {
@@ -28,13 +31,22 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Verify config values
+	// Verify AWS config values
 	if config.AWS.SSO.StartURL != "https://test.awsapps.com/start" {
 		t.Errorf("Expected StartURL = https://test.awsapps.com/start, got %s", config.AWS.SSO.StartURL)
 	}
 
 	if config.AWS.SSO.Region != "us-west-2" {
 		t.Errorf("Expected Region = us-west-2, got %s", config.AWS.SSO.Region)
+	}
+
+	// Verify GitHub config values
+	if config.GitHub.Token != "ghp_test_token" {
+		t.Errorf("Expected GitHub Token = ghp_test_token, got %s", config.GitHub.Token)
+	}
+
+	if config.GitHub.Organization != "test-org" {
+		t.Errorf("Expected GitHub Organization = test-org, got %s", config.GitHub.Organization)
 	}
 }
 
@@ -65,6 +77,10 @@ func TestSaveConfig(t *testing.T) {
 				Region:   "eu-west-1",
 			},
 		},
+		GitHub: GitHubConfig{
+			Token:        "ghp_save_test_token",
+			Organization: "save-test-org",
+		},
 	}
 
 	err := config.SaveConfigToPath(configPath)
@@ -89,6 +105,14 @@ func TestSaveConfig(t *testing.T) {
 
 	if loadedConfig.AWS.SSO.Region != config.AWS.SSO.Region {
 		t.Errorf("Expected Region = %s, got %s", config.AWS.SSO.Region, loadedConfig.AWS.SSO.Region)
+	}
+
+	if loadedConfig.GitHub.Token != config.GitHub.Token {
+		t.Errorf("Expected GitHub Token = %s, got %s", config.GitHub.Token, loadedConfig.GitHub.Token)
+	}
+
+	if loadedConfig.GitHub.Organization != config.GitHub.Organization {
+		t.Errorf("Expected GitHub Organization = %s, got %s", config.GitHub.Organization, loadedConfig.GitHub.Organization)
 	}
 }
 
@@ -157,5 +181,65 @@ func TestGetConfigPath(t *testing.T) {
 	// Should contain .synacklab directory
 	if !filepath.IsAbs(path) {
 		t.Error("GetConfigPath() should return absolute path")
+	}
+}
+
+func TestValidateGitHub(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  Config
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "valid GitHub config",
+			config: Config{
+				GitHub: GitHubConfig{
+					Token:        "ghp_test_token",
+					Organization: "test-org",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing GitHub token",
+			config: Config{
+				GitHub: GitHubConfig{
+					Organization: "test-org",
+				},
+			},
+			wantErr: true,
+			errMsg:  "GitHub token is required",
+		},
+		{
+			name: "empty GitHub token",
+			config: Config{
+				GitHub: GitHubConfig{
+					Token:        "",
+					Organization: "test-org",
+				},
+			},
+			wantErr: true,
+			errMsg:  "GitHub token is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.ValidateGitHub()
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("ValidateGitHub() expected error but got none")
+					return
+				}
+				if tt.errMsg != "" && err.Error() != tt.errMsg {
+					t.Errorf("ValidateGitHub() error = %v, want %v", err, tt.errMsg)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("ValidateGitHub() unexpected error = %v", err)
+				}
+			}
+		})
 	}
 }
