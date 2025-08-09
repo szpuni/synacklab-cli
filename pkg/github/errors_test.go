@@ -14,12 +14,12 @@ import (
 func TestGitHubError_Error(t *testing.T) {
 	tests := []struct {
 		name     string
-		err      *GitHubError
+		err      *Error
 		expected string
 	}{
 		{
 			name: "error with resource",
-			err: &GitHubError{
+			err: &Error{
 				Type:     ErrorTypeAuth,
 				Message:  "invalid token",
 				Resource: "repository test/repo",
@@ -28,7 +28,7 @@ func TestGitHubError_Error(t *testing.T) {
 		},
 		{
 			name: "error without resource",
-			err: &GitHubError{
+			err: &Error{
 				Type:    ErrorTypeValidation,
 				Message: "validation failed",
 			},
@@ -45,7 +45,7 @@ func TestGitHubError_Error(t *testing.T) {
 
 func TestGitHubError_Unwrap(t *testing.T) {
 	cause := errors.New("underlying error")
-	err := &GitHubError{
+	err := &Error{
 		Type:    ErrorTypeNetwork,
 		Message: "network error",
 		Cause:   cause,
@@ -54,7 +54,7 @@ func TestGitHubError_Unwrap(t *testing.T) {
 	assert.Equal(t, cause, err.Unwrap())
 }
 
-func TestGitHubError_IsRetryable(t *testing.T) {
+func TestError_IsRetryable(t *testing.T) {
 	tests := []struct {
 		name      string
 		errorType ErrorType
@@ -89,7 +89,7 @@ func TestGitHubError_IsRetryable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := &GitHubError{
+			err := &Error{
 				Type:      tt.errorType,
 				Retryable: tt.retryable,
 			}
@@ -124,8 +124,8 @@ func TestWrapGitHubError(t *testing.T) {
 			expectedMsg:  "",
 		},
 		{
-			name: "already GitHubError returns as-is",
-			inputError: &GitHubError{
+			name: "already Error returns as-is",
+			inputError: &Error{
 				Type:    ErrorTypeAuth,
 				Message: "auth error",
 			},
@@ -274,7 +274,7 @@ func TestWithRetry(t *testing.T) {
 		operation := func() error {
 			callCount++
 			if callCount < 3 {
-				return &GitHubError{
+				return &Error{
 					Type:      ErrorTypeNetwork,
 					Message:   "network error",
 					Retryable: true,
@@ -292,7 +292,7 @@ func TestWithRetry(t *testing.T) {
 		callCount := 0
 		operation := func() error {
 			callCount++
-			return &GitHubError{
+			return &Error{
 				Type:      ErrorTypeAuth,
 				Message:   "auth error",
 				Retryable: false,
@@ -308,7 +308,7 @@ func TestWithRetry(t *testing.T) {
 		callCount := 0
 		operation := func() error {
 			callCount++
-			return &GitHubError{
+			return &Error{
 				Type:      ErrorTypeNetwork,
 				Message:   "network error",
 				Retryable: true,
@@ -340,7 +340,7 @@ func TestWithRetry(t *testing.T) {
 						Reset: github.Timestamp{Time: resetTime},
 					},
 				}
-				return &GitHubError{
+				return &Error{
 					Type:      ErrorTypeRateLimit,
 					Message:   "rate limit exceeded",
 					Cause:     rateLimitErr,

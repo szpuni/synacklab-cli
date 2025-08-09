@@ -47,7 +47,7 @@ func init() {
 	githubCmd.AddCommand(githubApplyCmd)
 }
 
-func runGitHubApply(cmd *cobra.Command, args []string) error {
+func runGitHubApply(_ *cobra.Command, args []string) error {
 	configFile := args[0]
 
 	// Load synacklab configuration

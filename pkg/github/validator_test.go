@@ -1,10 +1,7 @@
 package github
 
 import (
-	"net/http"
 	"testing"
-
-	"github.com/google/go-github/v66/github"
 )
 
 func TestValidator_ValidateConfig(t *testing.T) {
@@ -71,21 +68,13 @@ func TestNewValidator(t *testing.T) {
 	validator := NewValidator("test-token")
 	if validator == nil {
 		t.Errorf("NewValidator() returned nil")
+		return
 	}
 	if validator.client == nil {
 		t.Errorf("NewValidator() client is nil")
 	}
 	if validator.ctx == nil {
 		t.Errorf("NewValidator() context is nil")
-	}
-}
-
-// Mock error response for testing error handling
-func createMockErrorResponse(statusCode int) *github.ErrorResponse {
-	return &github.ErrorResponse{
-		Response: &http.Response{
-			StatusCode: statusCode,
-		},
 	}
 }
 

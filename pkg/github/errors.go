@@ -23,8 +23,8 @@ const (
 	ErrorTypeUnknown    ErrorType = "unknown"
 )
 
-// GitHubError represents a structured error from GitHub operations
-type GitHubError struct {
+// Error represents a structured error from GitHub operations
+type Error struct {
 	Type      ErrorType `json:"type"`
 	Message   string    `json:"message"`
 	Cause     error     `json:"-"`
@@ -35,7 +35,7 @@ type GitHubError struct {
 }
 
 // Error implements the error interface
-func (e *GitHubError) Error() string {
+func (e *Error) Error() string {
 	if e.Resource != "" {
 		return fmt.Sprintf("%s error for %s: %s", e.Type, e.Resource, e.Message)
 	}
@@ -43,18 +43,18 @@ func (e *GitHubError) Error() string {
 }
 
 // Unwrap returns the underlying error
-func (e *GitHubError) Unwrap() error {
+func (e *Error) Unwrap() error {
 	return e.Cause
 }
 
 // IsRetryable returns whether the error is retryable
-func (e *GitHubError) IsRetryable() bool {
+func (e *Error) IsRetryable() bool {
 	return e.Retryable
 }
 
-// NewGitHubError creates a new GitHubError with the specified type and message
-func NewGitHubError(errorType ErrorType, message string, cause error) *GitHubError {
-	return &GitHubError{
+// NewGitHubError creates a new Error with the specified type and message
+func NewGitHubError(errorType ErrorType, message string, cause error) *Error {
+	return &Error{
 		Type:      errorType,
 		Message:   message,
 		Cause:     cause,
@@ -63,13 +63,13 @@ func NewGitHubError(errorType ErrorType, message string, cause error) *GitHubErr
 }
 
 // WrapGitHubError wraps a GitHub API error into our structured error type
-func WrapGitHubError(err error, resource string) *GitHubError {
+func WrapGitHubError(err error, resource string) *Error {
 	if err == nil {
 		return nil
 	}
 
-	// If it's already a GitHubError, return as-is
-	if ghErr, ok := err.(*GitHubError); ok {
+	// If it's already a Error, return as-is
+	if ghErr, ok := err.(*Error); ok {
 		if ghErr.Resource == "" {
 			ghErr.Resource = resource
 		}
@@ -83,7 +83,7 @@ func WrapGitHubError(err error, resource string) *GitHubError {
 
 	// Handle HTTP errors
 	if httpErr, ok := err.(*github.RateLimitError); ok {
-		return &GitHubError{
+		return &Error{
 			Type:      ErrorTypeRateLimit,
 			Message:   fmt.Sprintf("Rate limit exceeded. Reset at %v", httpErr.Rate.Reset.Time),
 			Cause:     err,
@@ -94,7 +94,7 @@ func WrapGitHubError(err error, resource string) *GitHubError {
 
 	// Handle network/connection errors
 	if isNetworkError(err) {
-		return &GitHubError{
+		return &Error{
 			Type:      ErrorTypeNetwork,
 			Message:   "Network error occurred. Please check your connection and try again",
 			Cause:     err,
@@ -104,7 +104,7 @@ func WrapGitHubError(err error, resource string) *GitHubError {
 	}
 
 	// Default to unknown error
-	return &GitHubError{
+	return &Error{
 		Type:      ErrorTypeUnknown,
 		Message:   err.Error(),
 		Cause:     err,
@@ -114,8 +114,8 @@ func WrapGitHubError(err error, resource string) *GitHubError {
 }
 
 // parseGitHubAPIError parses GitHub API error responses into structured errors
-func parseGitHubAPIError(ghErr *github.ErrorResponse, resource string) *GitHubError {
-	baseErr := &GitHubError{
+func parseGitHubAPIError(ghErr *github.ErrorResponse, resource string) *Error {
+	baseErr := &Error{
 		Resource: resource,
 		Cause:    ghErr,
 	}
@@ -280,9 +280,7 @@ func WithRetry(operation RetryableOperation, config *RetryConfig) error {
 
 			// Exponential backoff with jitter
 			delay = time.Duration(float64(delay) * config.BackoffFactor)
-			if delay > config.MaxDelay {
-				delay = config.MaxDelay
-			}
+			delay = min(delay, config.MaxDelay)
 		}
 
 		err := operation()
@@ -293,7 +291,7 @@ func WithRetry(operation RetryableOperation, config *RetryConfig) error {
 		lastErr = err
 
 		// Check if error is retryable
-		if ghErr, ok := err.(*GitHubError); ok {
+		if ghErr, ok := err.(*Error); ok {
 			if !ghErr.IsRetryable() {
 				return err
 			}

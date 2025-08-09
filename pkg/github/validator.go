@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/google/go-github/v66/github"
 )
@@ -47,7 +48,7 @@ func (v *Validator) validateCollaboratorsExist(collaborators []Collaborator) err
 		_, _, err := v.client.Users.Get(v.ctx, collab.Username)
 		if err != nil {
 			// Check if it's a 404 error (user not found)
-			if githubErr, ok := err.(*github.ErrorResponse); ok && githubErr.Response.StatusCode == 404 {
+			if githubErr, ok := err.(*github.ErrorResponse); ok && githubErr.Response.StatusCode == http.StatusNotFound {
 				return fmt.Errorf("collaborator %d: user '%s' does not exist on GitHub", i+1, collab.Username)
 			}
 			return fmt.Errorf("collaborator %d: failed to validate user '%s': %w", i+1, collab.Username, err)
@@ -62,7 +63,7 @@ func (v *Validator) validateTeamsExist(teams []TeamAccess, owner string) error {
 		_, _, err := v.client.Teams.GetTeamBySlug(v.ctx, owner, team.TeamSlug)
 		if err != nil {
 			// Check if it's a 404 error (team not found)
-			if githubErr, ok := err.(*github.ErrorResponse); ok && githubErr.Response.StatusCode == 404 {
+			if githubErr, ok := err.(*github.ErrorResponse); ok && githubErr.Response.StatusCode == http.StatusNotFound {
 				return fmt.Errorf("team %d: team '%s' does not exist in organization '%s'", i+1, team.TeamSlug, owner)
 			}
 			return fmt.Errorf("team %d: failed to validate team '%s': %w", i+1, team.TeamSlug, err)
@@ -77,7 +78,7 @@ func (v *Validator) ValidatePermissions(owner, repo string) error {
 	_, resp, err := v.client.Repositories.Get(v.ctx, owner, repo)
 	if err != nil {
 		// If repo doesn't exist, check if we have permissions to create repos in the org
-		if resp != nil && resp.StatusCode == 404 {
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
 			return v.validateCreatePermissions(owner)
 		}
 		return fmt.Errorf("failed to check repository permissions: %w", err)
@@ -92,7 +93,7 @@ func (v *Validator) validateCreatePermissions(owner string) error {
 	// Try to get the organization to see if we have access
 	_, _, err := v.client.Organizations.Get(v.ctx, owner)
 	if err != nil {
-		if githubErr, ok := err.(*github.ErrorResponse); ok && githubErr.Response.StatusCode == 404 {
+		if githubErr, ok := err.(*github.ErrorResponse); ok && githubErr.Response.StatusCode == http.StatusNotFound {
 			return fmt.Errorf("organization '%s' does not exist or you don't have access to it", owner)
 		}
 		return fmt.Errorf("failed to validate organization access: %w", err)
@@ -118,7 +119,7 @@ func (v *Validator) validateAdminPermissions(owner, repo string) error {
 	}
 	_, _, err := v.client.Repositories.ListCollaborators(v.ctx, owner, repo, opts)
 	if err != nil {
-		if githubErr, ok := err.(*github.ErrorResponse); ok && githubErr.Response.StatusCode == 403 {
+		if githubErr, ok := err.(*github.ErrorResponse); ok && githubErr.Response.StatusCode == http.StatusForbidden {
 			return fmt.Errorf("insufficient permissions: admin access required for repository '%s/%s'", owner, repo)
 		}
 		return fmt.Errorf("failed to validate repository permissions: %w", err)

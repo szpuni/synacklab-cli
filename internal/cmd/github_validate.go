@@ -39,7 +39,7 @@ func init() {
 	githubCmd.AddCommand(githubValidateCmd)
 }
 
-func runGitHubValidate(cmd *cobra.Command, args []string) error {
+func runGitHubValidate(_ *cobra.Command, args []string) error {
 	configFile := args[0]
 
 	fmt.Printf("🔍 Validating configuration file: %s\n", configFile)

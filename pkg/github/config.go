@@ -71,7 +71,7 @@ func (r *RepositoryConfig) Validate() error {
 	}
 
 	if validationErrors.HasErrors() {
-		return &GitHubError{
+		return &Error{
 			Type:      ErrorTypeValidation,
 			Message:   validationErrors.Error(),
 			Cause:     validationErrors,
