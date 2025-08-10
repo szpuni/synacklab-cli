@@ -144,7 +144,7 @@ func TestAuthManager_ValidateToken(t *testing.T) {
 					if r.URL.Path == "/user" {
 						w.Header().Set("X-OAuth-Scopes", "repo,user")
 						w.WriteHeader(http.StatusOK)
-						w.Write([]byte(`{"login": "testuser"}`))
+						_, _ = w.Write([]byte(`{"login": "testuser"}`))
 					}
 				}))
 			},
@@ -158,7 +158,7 @@ func TestAuthManager_ValidateToken(t *testing.T) {
 					if r.URL.Path == "/user" {
 						w.Header().Set("X-OAuth-Scopes", "user")
 						w.WriteHeader(http.StatusOK)
-						w.Write([]byte(`{"login": "testuser"}`))
+						_, _ = w.Write([]byte(`{"login": "testuser"}`))
 					}
 				}))
 			},
@@ -172,7 +172,7 @@ func TestAuthManager_ValidateToken(t *testing.T) {
 				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					if r.URL.Path == "/user" {
 						w.WriteHeader(http.StatusUnauthorized)
-						w.Write([]byte(`{"message": "Bad credentials"}`))
+						_, _ = w.Write([]byte(`{"message": "Bad credentials"}`))
 					}
 				}))
 			},
@@ -284,7 +284,7 @@ func TestAuthManager_AuthenticateFromConfig(t *testing.T) {
 		if r.URL.Path == "/user" {
 			w.Header().Set("X-OAuth-Scopes", "repo,user")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"login": "testuser"}`))
+			_, _ = w.Write([]byte(`{"login": "testuser"}`))
 		}
 	}))
 	defer server.Close()

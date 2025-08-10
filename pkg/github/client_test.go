@@ -24,15 +24,15 @@ func mockGitHubServer(_ *testing.T, responses map[string]interface{}) *httptest.
 		if response, exists := responses[key]; exists {
 			if err, ok := response.(error); ok {
 				w.WriteHeader(http.StatusInternalServerError)
-				json.NewEncoder(w).Encode(map[string]string{"message": err.Error()})
+				_ = json.NewEncoder(w).Encode(map[string]string{"message": err.Error()})
 				return
 			}
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(response)
+			_ = json.NewEncoder(w).Encode(response)
 		} else {
 			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]string{"message": "Not Found"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"message": "Not Found"})
 		}
 	}))
 }

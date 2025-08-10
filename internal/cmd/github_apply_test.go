@@ -249,7 +249,7 @@ func TestDryRunFunctionality(t *testing.T) {
 			var buf bytes.Buffer
 			done := make(chan bool)
 			go func() {
-				buf.ReadFrom(r)
+				_, _ = buf.ReadFrom(r)
 				done <- true
 			}()
 
@@ -258,7 +258,7 @@ func TestDryRunFunctionality(t *testing.T) {
 			require.NoError(t, err)
 
 			// Restore stdout and get output
-			w.Close()
+			_ = w.Close()
 			os.Stdout = oldStdout
 			<-done
 
@@ -545,7 +545,7 @@ func TestDisplayBranchProtectionDetails(t *testing.T) {
 			var buf bytes.Buffer
 			done := make(chan bool)
 			go func() {
-				buf.ReadFrom(r)
+				_, _ = buf.ReadFrom(r)
 				done <- true
 			}()
 
@@ -553,7 +553,7 @@ func TestDisplayBranchProtectionDetails(t *testing.T) {
 			displayBranchProtectionDetails(tt.branchProtection, "    ")
 
 			// Restore stdout and get output
-			w.Close()
+			_ = w.Close()
 			os.Stdout = oldStdout
 			<-done
 
@@ -651,7 +651,7 @@ func TestDisplayBranchProtectionChanges(t *testing.T) {
 			var buf bytes.Buffer
 			done := make(chan bool)
 			go func() {
-				buf.ReadFrom(r)
+				_, _ = buf.ReadFrom(r)
 				done <- true
 			}()
 
@@ -659,7 +659,7 @@ func TestDisplayBranchProtectionChanges(t *testing.T) {
 			displayBranchProtectionChanges(tt.before, tt.after, "    ")
 
 			// Restore stdout and get output
-			w.Close()
+			_ = w.Close()
 			os.Stdout = oldStdout
 			<-done
 
@@ -776,7 +776,7 @@ func TestDryRunWithComplexPlan(t *testing.T) {
 	var buf bytes.Buffer
 	done := make(chan bool)
 	go func() {
-		buf.ReadFrom(r)
+		_, _ = buf.ReadFrom(r)
 		done <- true
 	}()
 
@@ -785,7 +785,7 @@ func TestDryRunWithComplexPlan(t *testing.T) {
 	require.NoError(t, err)
 
 	// Restore stdout and get output
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 	<-done
 
