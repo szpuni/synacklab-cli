@@ -26,6 +26,8 @@ This directory contains example YAML configuration files demonstrating various G
 
 ## Example Files
 
+### Single Repository Examples
+
 ### [`github-simple-repo.yaml`](./github-simple-repo.yaml)
 **Use case**: Basic repository setup with minimal configuration
 
@@ -82,9 +84,69 @@ This directory contains example YAML configuration files demonstrating various G
 
 **Best for**: Reference documentation, understanding all options
 
+### Multi-Repository Examples
+
+### [`github-multi-repo-basic.yaml`](./github-multi-repo-basic.yaml)
+**Use case**: Basic multi-repository configuration without defaults
+
+**Features demonstrated**:
+- Multi-repository format with `repositories` array
+- Individual repository configurations
+- Version specification for multi-repo format
+
+**Best for**: Managing a few related repositories, learning multi-repo format
+
+### [`github-multi-repo-advanced.yaml`](./github-multi-repo-advanced.yaml)
+**Use case**: Advanced multi-repository with global defaults and overrides
+
+**Features demonstrated**:
+- Global defaults for consistent settings across repositories
+- Repository-specific overrides for customization
+- Complex merge scenarios (defaults + overrides)
+- Different repository types (backend, frontend, data, documentation)
+- Security-focused configurations with varying strictness
+
+**Best for**: Large-scale repository management, enterprise environments, maintaining consistency
+
+### Multi-Repository Documentation
+
+### [`migration-single-to-multi.md`](./migration-single-to-multi.md)
+**Use case**: Guide for migrating from single to multi-repository configurations
+
+**Content**:
+- Step-by-step migration process
+- Before/after configuration examples
+- Migration strategies and patterns
+- Common pitfalls and solutions
+
+**Best for**: Teams transitioning to multi-repository management
+
+### [`github-multi-repo-schema.md`](./github-multi-repo-schema.md)
+**Use case**: Complete schema reference for multi-repository configurations
+
+**Content**:
+- Detailed schema documentation
+- Configuration merging rules
+- Validation requirements
+- Example validation errors
+
+**Best for**: Understanding the complete multi-repository format, troubleshooting
+
+### [`github-multi-repo-best-practices.md`](./github-multi-repo-best-practices.md)
+**Use case**: Best practices for multi-repository management
+
+**Content**:
+- Configuration organization strategies
+- Security best practices
+- Performance and scalability considerations
+- Team collaboration patterns
+- Error handling and recovery
+
+**Best for**: Establishing multi-repository management standards, avoiding common mistakes
+
 ## Configuration Patterns
 
-### Basic Repository Pattern
+### Single Repository Pattern
 
 ```yaml
 name: "repository-name"
@@ -96,6 +158,31 @@ features:
   wiki: false
   projects: false
   discussions: false
+```
+
+### Multi-Repository Pattern
+
+```yaml
+version: "1.0"
+
+# Global defaults applied to all repositories
+defaults:
+  private: true
+  topics: ["production", "team"]
+  features:
+    issues: true
+    projects: true
+
+# Individual repositories
+repositories:
+  - name: "service-a"
+    description: "First microservice"
+    topics: ["golang", "api"]
+    
+  - name: "service-b"
+    description: "Second microservice"
+    topics: ["python", "worker"]
+    private: false  # Override default
 ```
 
 ### Branch Protection Pattern
@@ -149,6 +236,22 @@ cp examples/github-simple-repo.yaml my-project.yaml
 synacklab github apply my-project.yaml
 ```
 
+### 1b. Managing Multiple Related Repositories
+
+**File**: `github-multi-repo-basic.yaml` or `github-multi-repo-advanced.yaml`
+
+```bash
+# For simple multi-repository setup
+cp examples/github-multi-repo-basic.yaml my-services.yaml
+# Edit my-services.yaml with your repositories
+synacklab github apply my-services.yaml
+
+# For advanced setup with defaults
+cp examples/github-multi-repo-advanced.yaml my-enterprise-repos.yaml
+# Customize defaults and repository-specific settings
+synacklab github apply my-enterprise-repos.yaml
+```
+
 ### 2. Migrating Existing Repository to Code
 
 1. Create configuration file based on current repository settings
@@ -158,13 +261,25 @@ synacklab github apply my-project.yaml
 
 ### 3. Standardizing Team Repositories
 
-**File**: `github-team-repo.yaml` (customize for your team)
+**Single Repository File**: `github-team-repo.yaml` (customize for your team)
 
 ```bash
 # Create team-specific template
 cp examples/github-team-repo.yaml team-template.yaml
 # Customize team names, permissions, and policies
 # Apply to multiple repositories
+```
+
+**Multi-Repository Approach**: `github-multi-repo-advanced.yaml`
+
+```bash
+# Create team-wide multi-repository configuration
+cp examples/github-multi-repo-advanced.yaml team-repos.yaml
+# Set team defaults and add all team repositories
+synacklab github apply team-repos.yaml
+
+# Apply to specific repositories only
+synacklab github apply team-repos.yaml --repos service-a,service-b
 ```
 
 ### 4. Setting Up Open Source Project
@@ -196,18 +311,30 @@ export GITHUB_TOKEN="your-github-token"
 ### Validate Configuration
 
 ```bash
-# Validate syntax and basic rules
+# Validate single repository configuration
 synacklab github validate examples/github-complete-repo.yaml
+
+# Validate multi-repository configuration
+synacklab github validate examples/github-multi-repo-advanced.yaml
 
 # Validate with GitHub API checks
 synacklab github validate examples/github-complete-repo.yaml --check-remote
+
+# Validate specific repositories in multi-repo config
+synacklab github validate examples/github-multi-repo-advanced.yaml --repos service-a,service-b
 ```
 
 ### Preview Changes
 
 ```bash
-# See what would be changed without applying
+# See what would be changed without applying (single repository)
 synacklab github apply examples/github-team-repo.yaml --dry-run
+
+# Preview changes for multi-repository configuration
+synacklab github apply examples/github-multi-repo-advanced.yaml --dry-run
+
+# Preview changes for specific repositories only
+synacklab github apply examples/github-multi-repo-advanced.yaml --dry-run --repos service-a
 ```
 
 ### Test with Temporary Repository

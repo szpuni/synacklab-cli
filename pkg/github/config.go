@@ -335,11 +335,118 @@ func LoadRepositoryConfig(data []byte) (*RepositoryConfig, error) {
 }
 
 // LoadRepositoryConfigFromFile loads repository configuration from a file
+// This function now detects the format and handles both single and multi-repository configurations
+// For backward compatibility, it returns a single RepositoryConfig even for multi-repo files
 func LoadRepositoryConfigFromFile(filename string) (*RepositoryConfig, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	return LoadRepositoryConfig(data)
+	// Detect configuration format
+	detector := NewConfigDetector()
+	format, err := detector.DetectFormat(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect config format: %w", err)
+	}
+
+	switch format {
+	case FormatSingleRepository:
+		return LoadRepositoryConfig(data)
+	case FormatMultiRepository:
+		// For backward compatibility, if this is a multi-repo config but only has one repository,
+		// return that single repository. Otherwise, return an error indicating multi-repo format.
+		multiConfig, err := detector.LoadMultiRepo(data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load multi-repository config: %w", err)
+		}
+
+		if len(multiConfig.Repositories) == 1 {
+			// Apply defaults to the single repository if present
+			if multiConfig.Defaults != nil {
+				merger := NewConfigMerger()
+				merged, err := merger.MergeDefaults(multiConfig.Defaults, &multiConfig.Repositories[0])
+				if err != nil {
+					return nil, fmt.Errorf("failed to merge defaults: %w", err)
+				}
+				return merged, nil
+			}
+			return &multiConfig.Repositories[0], nil
+		}
+
+		return nil, fmt.Errorf("multi-repository configuration detected with %d repositories. Use LoadMultiRepositoryConfigFromFile or LoadConfigFromFile instead", len(multiConfig.Repositories))
+	default:
+		return nil, fmt.Errorf("unsupported config format: %s", format)
+	}
+}
+
+// validateGitHubRepositoryName validates a GitHub repository name according to GitHub's rules
+func validateGitHubRepositoryName(name string) error {
+	if name == "" {
+		return fmt.Errorf("repository name cannot be empty")
+	}
+
+	// Repository name length validation (GitHub allows 1-100 characters)
+	if len(name) > 100 {
+		return fmt.Errorf("repository name must be 100 characters or less")
+	}
+
+	// Repository name format validation
+	// GitHub repository names can contain alphanumeric characters, hyphens, underscores, and periods
+	// They cannot start with a period or hyphen
+	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "-") {
+		return fmt.Errorf("repository name cannot start with a period or hyphen")
+	}
+
+	// Check for valid characters
+	for _, char := range name {
+		if !isValidRepoNameChar(char) {
+			return fmt.Errorf("repository name can only contain alphanumeric characters, hyphens, underscores, and periods")
+		}
+	}
+
+	// Repository names cannot end with .git
+	if strings.HasSuffix(strings.ToLower(name), ".git") {
+		return fmt.Errorf("repository name cannot end with .git")
+	}
+
+	return nil
+}
+
+// validateGitHubTopic validates a GitHub topic according to GitHub's rules
+func validateGitHubTopic(topic string) error {
+	if topic == "" {
+		return fmt.Errorf("topic cannot be empty")
+	}
+
+	// Topic length validation (GitHub allows 1-50 characters)
+	if len(topic) > 50 {
+		return fmt.Errorf("topic must be 50 characters or less")
+	}
+
+	// Topic format validation
+	// GitHub topics can only contain lowercase letters, numbers, and hyphens
+	// They cannot start or end with hyphens
+	if strings.HasPrefix(topic, "-") || strings.HasSuffix(topic, "-") {
+		return fmt.Errorf("topic cannot start or end with a hyphen")
+	}
+
+	// Check for valid characters (lowercase letters, numbers, and hyphens only)
+	for _, char := range topic {
+		if !isValidTopicChar(char) {
+			return fmt.Errorf("topic can only contain lowercase letters, numbers, and hyphens")
+		}
+	}
+
+	return nil
+}
+
+// isValidRepoNameChar checks if a character is valid for repository names
+func isValidRepoNameChar(char rune) bool {
+	return (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '-' || char == '_' || char == '.'
+}
+
+// isValidTopicChar checks if a character is valid for topics
+func isValidTopicChar(char rune) bool {
+	return (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '-'
 }

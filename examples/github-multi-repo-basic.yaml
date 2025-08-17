@@ -1,0 +1,44 @@
+# Basic Multi-Repository Configuration Example
+# This example demonstrates the simplest multi-repository format
+
+version: "1.0"
+
+repositories:
+  - name: "frontend-app"
+    description: "React frontend application"
+    private: false
+    topics:
+      - react
+      - frontend
+      - typescript
+    features:
+      issues: true
+      wiki: true
+      projects: false
+      discussions: false
+
+  - name: "backend-api"
+    description: "REST API backend service"
+    private: true
+    topics:
+      - golang
+      - api
+      - backend
+    features:
+      issues: true
+      wiki: false
+      projects: true
+      discussions: false
+
+  - name: "shared-utils"
+    description: "Shared utility libraries"
+    private: false
+    topics:
+      - utilities
+      - shared
+      - library
+    features:
+      issues: true
+      wiki: true
+      projects: false
+      discussions: true

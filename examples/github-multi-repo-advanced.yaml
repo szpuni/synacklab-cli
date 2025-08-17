@@ -1,0 +1,204 @@
+# Advanced Multi-Repository Configuration Example
+# This example demonstrates global defaults with repository-specific overrides
+
+version: "1.0"
+
+# Global defaults applied to all repositories
+defaults:
+  # Default visibility and basic settings
+  private: true
+  topics:
+    - production
+    - microservice
+    - company-standard
+  
+  # Default repository features
+  features:
+    issues: true
+    wiki: false
+    projects: true
+    discussions: false
+    security_and_analysis:
+      secret_scanning: true
+      secret_scanning_push_protection: true
+      dependabot_security_updates: true
+  
+  # Default branch protection rules
+  branch_protection:
+    - pattern: "main"
+      required_reviews: 2
+      dismiss_stale_reviews: true
+      require_code_owner_review: true
+      required_status_checks:
+        strict: true
+        contexts:
+          - "ci/build"
+          - "ci/test"
+      restrictions:
+        users: []
+        teams: ["admin-team"]
+        apps: []
+  
+  # Default collaborators for all repositories
+  collaborators:
+    - username: "devops-lead"
+      permission: "admin"
+    - username: "security-team"
+      permission: "read"
+  
+  # Default team access
+  teams:
+    - team: "backend-team"
+      permission: "write"
+    - team: "devops-team"
+      permission: "admin"
+  
+  # Default webhooks
+  webhooks:
+    - url: "https://ci.company.com/webhook/github"
+      events: ["push", "pull_request", "release"]
+      active: true
+      content_type: "json"
+      secret: "${WEBHOOK_SECRET}"
+
+# Repository definitions with specific overrides
+repositories:
+  - name: "user-service"
+    description: "User management and authentication microservice"
+    topics:
+      - golang
+      - authentication
+      - users
+    # Inherits all defaults, adds specific topics
+    
+  - name: "payment-service"
+    description: "Payment processing microservice"
+    topics:
+      - golang
+      - payments
+      - pci-compliant
+    # Override branch protection for stricter security
+    branch_protection:
+      - pattern: "main"
+        required_reviews: 3  # Stricter than default
+        dismiss_stale_reviews: true
+        require_code_owner_review: true
+        required_status_checks:
+          strict: true
+          contexts:
+            - "ci/build"
+            - "ci/test"
+            - "security/scan"
+            - "security/pci-compliance"
+        restrictions:
+          users: []
+          teams: ["admin-team", "security-team"]
+          apps: []
+    # Additional security team access
+    teams:
+      - team: "backend-team"
+        permission: "write"
+      - team: "devops-team"
+        permission: "admin"
+      - team: "security-team"
+        permission: "admin"
+    
+  - name: "frontend-dashboard"
+    description: "Customer-facing dashboard application"
+    private: false  # Override default - public repository
+    topics:
+      - react
+      - typescript
+      - dashboard
+      - customer-facing
+    # Different team structure for frontend
+    teams:
+      - team: "frontend-team"
+        permission: "admin"
+      - team: "backend-team"
+        permission: "read"
+      - team: "devops-team"
+        permission: "admin"
+    # Frontend-specific branch protection
+    branch_protection:
+      - pattern: "main"
+        required_reviews: 2
+        dismiss_stale_reviews: true
+        require_code_owner_review: true
+        required_status_checks:
+          strict: true
+          contexts:
+            - "ci/build"
+            - "ci/test"
+            - "ci/e2e-tests"
+            - "security/dependency-check"
+    
+  - name: "data-pipeline"
+    description: "ETL data processing pipeline"
+    topics:
+      - python
+      - etl
+      - data-processing
+      - analytics
+    # Data team specific access
+    collaborators:
+      - username: "devops-lead"
+        permission: "admin"
+      - username: "data-lead"
+        permission: "admin"
+      - username: "security-team"
+        permission: "read"
+    teams:
+      - team: "data-team"
+        permission: "admin"
+      - team: "backend-team"
+        permission: "read"
+      - team: "devops-team"
+        permission: "admin"
+    # Additional webhooks for data pipeline
+    webhooks:
+      - url: "https://ci.company.com/webhook/github"
+        events: ["push", "pull_request", "release"]
+        active: true
+        content_type: "json"
+        secret: "${WEBHOOK_SECRET}"
+      - url: "https://data-pipeline.company.com/webhook/github"
+        events: ["push", "release"]
+        active: true
+        content_type: "json"
+        secret: "${DATA_WEBHOOK_SECRET}"
+    
+  - name: "documentation"
+    description: "Technical documentation and guides"
+    private: false  # Public documentation
+    topics:
+      - documentation
+      - guides
+      - markdown
+    # Documentation-specific settings
+    features:
+      issues: true
+      wiki: true
+      projects: false
+      discussions: true  # Enable discussions for docs
+    # Relaxed branch protection for docs
+    branch_protection:
+      - pattern: "main"
+        required_reviews: 1  # Less strict for documentation
+        dismiss_stale_reviews: false
+        require_code_owner_review: false
+        required_status_checks:
+          strict: false
+          contexts:
+            - "ci/spell-check"
+            - "ci/link-check"
+    # Broader team access for documentation
+    teams:
+      - team: "backend-team"
+        permission: "write"
+      - team: "frontend-team"
+        permission: "write"
+      - team: "data-team"
+        permission: "write"
+      - team: "devops-team"
+        permission: "admin"

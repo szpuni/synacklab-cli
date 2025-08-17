@@ -694,6 +694,292 @@ func TestValidateGitHubTeamSlug(t *testing.T) {
 	}
 }
 
+func TestLoadRepositoryConfigFromFile_Enhanced(t *testing.T) {
+	// Create a temporary directory for test files
+	tempDir := t.TempDir()
+
+	tests := []struct {
+		name        string
+		configYAML  string
+		filename    string
+		wantErr     bool
+		errMsg      string
+		wantName    string
+		wantPrivate bool
+	}{
+		{
+			name: "single repository format",
+			configYAML: `
+name: single-repo
+description: A single repository
+private: true
+topics:
+  - go
+  - cli
+`,
+			filename:    "single_repo.yaml",
+			wantErr:     false,
+			wantName:    "single-repo",
+			wantPrivate: true,
+		},
+		{
+			name: "multi-repository format with single repo",
+			configYAML: `
+version: "1.0"
+defaults:
+  private: true
+  topics:
+    - default-topic
+repositories:
+  - name: multi-single-repo
+    description: A repository from multi-repo config
+    topics:
+      - specific-topic
+`,
+			filename:    "multi_single_repo.yaml",
+			wantErr:     false,
+			wantName:    "multi-single-repo",
+			wantPrivate: true,
+		},
+		{
+			name: "multi-repository format with multiple repos",
+			configYAML: `
+version: "1.0"
+repositories:
+  - name: repo1
+    description: First repository
+  - name: repo2
+    description: Second repository
+`,
+			filename: "multi_repos.yaml",
+			wantErr:  true,
+			errMsg:   "multi-repository configuration detected with 2 repositories",
+		},
+		{
+			name: "multi-repository format with defaults only",
+			configYAML: `
+version: "1.0"
+defaults:
+  private: false
+  topics:
+    - default-topic
+repositories:
+  - name: defaults-repo
+`,
+			filename:    "defaults_repo.yaml",
+			wantErr:     false,
+			wantName:    "defaults-repo",
+			wantPrivate: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configPath := filepath.Join(tempDir, tt.filename)
+			if err := os.WriteFile(configPath, []byte(tt.configYAML), 0644); err != nil {
+				t.Fatalf("Failed to write config file: %v", err)
+			}
+
+			config, err := LoadRepositoryConfigFromFile(configPath)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("LoadRepositoryConfigFromFile() expected error but got none")
+					return
+				}
+				if tt.errMsg != "" && !contains(err.Error(), tt.errMsg) {
+					t.Errorf("LoadRepositoryConfigFromFile() error = %v, want error containing %v", err, tt.errMsg)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("LoadRepositoryConfigFromFile() unexpected error = %v", err)
+					return
+				}
+				if config == nil {
+					t.Errorf("LoadRepositoryConfigFromFile() returned nil config")
+					return
+				}
+				if config.Name != tt.wantName {
+					t.Errorf("LoadRepositoryConfigFromFile() config.Name = %v, want %v", config.Name, tt.wantName)
+				}
+				if config.Private != tt.wantPrivate {
+					t.Errorf("LoadRepositoryConfigFromFile() config.Private = %v, want %v", config.Private, tt.wantPrivate)
+				}
+			}
+		})
+	}
+}
+
+func TestLoadMultiRepositoryConfigFromFile(t *testing.T) {
+	// Create a temporary directory for test files
+	tempDir := t.TempDir()
+
+	tests := []struct {
+		name       string
+		configYAML string
+		filename   string
+		wantErr    bool
+		errMsg     string
+		wantRepos  int
+	}{
+		{
+			name: "multi-repository format",
+			configYAML: `
+version: "1.0"
+defaults:
+  private: true
+  topics:
+    - default-topic
+repositories:
+  - name: repo1
+    description: First repository
+  - name: repo2
+    description: Second repository
+    private: false
+`,
+			filename:  "multi_repos.yaml",
+			wantErr:   false,
+			wantRepos: 2,
+		},
+		{
+			name: "single repository format converted",
+			configYAML: `
+name: single-repo
+description: A single repository
+private: true
+topics:
+  - go
+  - cli
+`,
+			filename:  "single_converted.yaml",
+			wantErr:   false,
+			wantRepos: 1,
+		},
+		{
+			name: "invalid multi-repository format",
+			configYAML: `
+version: "1.0"
+repositories:
+  - name: ""
+    description: Invalid repository
+`,
+			filename: "invalid_multi.yaml",
+			wantErr:  true,
+			errMsg:   "multi-repository configuration validation failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configPath := filepath.Join(tempDir, tt.filename)
+			if err := os.WriteFile(configPath, []byte(tt.configYAML), 0644); err != nil {
+				t.Fatalf("Failed to write config file: %v", err)
+			}
+
+			config, err := LoadMultiRepositoryConfigFromFile(configPath)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("LoadMultiRepositoryConfigFromFile() expected error but got none")
+					return
+				}
+				if tt.errMsg != "" && !contains(err.Error(), tt.errMsg) {
+					t.Errorf("LoadMultiRepositoryConfigFromFile() error = %v, want error containing %v", err, tt.errMsg)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("LoadMultiRepositoryConfigFromFile() unexpected error = %v", err)
+					return
+				}
+				if config == nil {
+					t.Errorf("LoadMultiRepositoryConfigFromFile() returned nil config")
+					return
+				}
+				if len(config.Repositories) != tt.wantRepos {
+					t.Errorf("LoadMultiRepositoryConfigFromFile() len(config.Repositories) = %v, want %v", len(config.Repositories), tt.wantRepos)
+				}
+			}
+		})
+	}
+}
+
+func TestLoadRepositoryConfigFromFile_BackwardCompatibility(t *testing.T) {
+	// Create a temporary directory for test files
+	tempDir := t.TempDir()
+
+	// Test that existing single repository configs still work exactly as before
+	originalConfig := `
+name: backward-compat-repo
+description: Testing backward compatibility
+private: false
+topics:
+  - go
+  - test
+features:
+  issues: true
+  wiki: false
+  projects: true
+  discussions: false
+branch_protection:
+  - pattern: main
+    required_reviews: 1
+    require_up_to_date: true
+collaborators:
+  - username: testuser
+    permission: write
+teams:
+  - team: dev-team
+    permission: admin
+webhooks:
+  - url: https://example.com/webhook
+    events:
+      - push
+      - pull_request
+    active: true
+`
+
+	configPath := filepath.Join(tempDir, "backward_compat.yaml")
+	if err := os.WriteFile(configPath, []byte(originalConfig), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	config, err := LoadRepositoryConfigFromFile(configPath)
+	if err != nil {
+		t.Errorf("LoadRepositoryConfigFromFile() backward compatibility failed: %v", err)
+		return
+	}
+
+	// Verify all fields are loaded correctly
+	if config.Name != "backward-compat-repo" {
+		t.Errorf("Name = %v, want %v", config.Name, "backward-compat-repo")
+	}
+	if config.Description != "Testing backward compatibility" {
+		t.Errorf("Description = %v, want %v", config.Description, "Testing backward compatibility")
+	}
+	if config.Private != false {
+		t.Errorf("Private = %v, want %v", config.Private, false)
+	}
+	if len(config.Topics) != 2 || config.Topics[0] != "go" || config.Topics[1] != "test" {
+		t.Errorf("Topics = %v, want %v", config.Topics, []string{"go", "test"})
+	}
+	if !config.Features.Issues {
+		t.Errorf("Features.Issues = %v, want %v", config.Features.Issues, true)
+	}
+	if config.Features.Wiki {
+		t.Errorf("Features.Wiki = %v, want %v", config.Features.Wiki, false)
+	}
+	if len(config.BranchRules) != 1 || config.BranchRules[0].Pattern != "main" {
+		t.Errorf("BranchRules = %v, want pattern 'main'", config.BranchRules)
+	}
+	if len(config.Collaborators) != 1 || config.Collaborators[0].Username != "testuser" {
+		t.Errorf("Collaborators = %v, want username 'testuser'", config.Collaborators)
+	}
+	if len(config.Teams) != 1 || config.Teams[0].TeamSlug != "dev-team" {
+		t.Errorf("Teams = %v, want team 'dev-team'", config.Teams)
+	}
+	if len(config.Webhooks) != 1 || config.Webhooks[0].URL != "https://example.com/webhook" {
+		t.Errorf("Webhooks = %v, want URL 'https://example.com/webhook'", config.Webhooks)
+	}
+}
+
 // Helper function to check if a string contains a substring
 func contains(s, substr string) bool {
 	return len(substr) == 0 || len(s) >= len(substr) && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || containsSubstring(s, substr)))

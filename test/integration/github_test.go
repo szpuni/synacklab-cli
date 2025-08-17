@@ -568,3 +568,263 @@ func removeEnvVar(env []string, key string) []string {
 	}
 	return result
 }
+
+// TestGitHubMultiRepositoryValidation tests the enhanced validate command with multi-repository configurations
+func TestGitHubMultiRepositoryValidation(t *testing.T) {
+	binaryPath := getBinaryPath(t)
+	tempDir := t.TempDir()
+
+	// Create multi-repository test configurations
+	multiRepoConfigs := createMultiRepoTestConfigs(t, tempDir)
+
+	tests := []struct {
+		name        string
+		configFile  string
+		args        []string
+		expectError bool
+		contains    []string
+		description string
+	}{
+		{
+			name:        "valid_multi_repo_config",
+			configFile:  multiRepoConfigs["valid-multi"],
+			args:        []string{"github", "validate"},
+			expectError: false,
+			contains: []string{
+				"Configuration format: multi-repository",
+				"Validating 3 repositories",
+				"Configuration file is valid",
+			},
+			description: "Should validate valid multi-repository configuration",
+		},
+		{
+			name:        "multi_repo_with_repos_filter",
+			configFile:  multiRepoConfigs["valid-multi"],
+			args:        []string{"github", "validate", "--repos", "service-a,service-b"},
+			expectError: false,
+			contains: []string{
+				"Configuration format: multi-repository",
+				"Validating 2 selected repositories from 3 total repositories",
+				"Selected repositories: service-a, service-b",
+				"Configuration file is valid",
+			},
+			description: "Should validate selected repositories from multi-repository configuration",
+		},
+		{
+			name:        "multi_repo_with_invalid_filter",
+			configFile:  multiRepoConfigs["valid-multi"],
+			args:        []string{"github", "validate", "--repos", "nonexistent-repo"},
+			expectError: true,
+			contains: []string{
+				"repositories not found in configuration: nonexistent-repo",
+			},
+			description: "Should fail when filtering for non-existent repositories",
+		},
+		{
+			name:        "invalid_multi_repo_config",
+			configFile:  multiRepoConfigs["invalid-multi"],
+			args:        []string{"github", "validate"},
+			expectError: true,
+			contains: []string{
+				"validation failed",
+				"duplicate repository name",
+				"repository name is required",
+			},
+			description: "Should fail validation for invalid multi-repository configuration",
+		},
+		{
+			name:        "multi_repo_with_defaults",
+			configFile:  multiRepoConfigs["multi-with-defaults"],
+			args:        []string{"github", "validate"},
+			expectError: false,
+			contains: []string{
+				"Configuration format: multi-repository",
+				"Validating 2 repositories",
+				"Configuration file is valid",
+			},
+			description: "Should validate multi-repository configuration with defaults",
+		},
+		{
+			name:        "single_repo_backward_compatibility",
+			configFile:  multiRepoConfigs["single-repo"],
+			args:        []string{"github", "validate"},
+			expectError: false,
+			contains: []string{
+				"Configuration format: single-repository",
+				"Validating single repository: test-repo",
+				"Configuration file is valid",
+			},
+			description: "Should maintain backward compatibility with single repository format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			args := append(tt.args, tt.configFile)
+			cmd := exec.Command(binaryPath, args...)
+			cmd.Env = removeEnvVar(os.Environ(), "GITHUB_TOKEN") // Ensure no token for offline validation
+
+			output, err := cmd.CombinedOutput()
+			outputStr := string(output)
+
+			t.Logf("Test: %s", tt.description)
+			t.Logf("Command: %s %v", binaryPath, args)
+			t.Logf("Exit code: %v", err)
+			t.Logf("Output: %s", outputStr)
+
+			if tt.expectError && err == nil {
+				t.Error("Expected command to fail, but it succeeded")
+			}
+
+			if !tt.expectError && err != nil {
+				t.Errorf("Expected command to succeed, but it failed: %v", err)
+			}
+
+			for _, expected := range tt.contains {
+				if !strings.Contains(outputStr, expected) {
+					t.Errorf("Expected output to contain %q, but it didn't.\nFull output: %s", expected, outputStr)
+				}
+			}
+		})
+	}
+}
+
+// createMultiRepoTestConfigs creates test configuration files for multi-repository testing
+func createMultiRepoTestConfigs(t *testing.T, tempDir string) map[string]string {
+	configs := map[string]string{
+		"valid-multi":         filepath.Join(tempDir, "valid-multi.yaml"),
+		"invalid-multi":       filepath.Join(tempDir, "invalid-multi.yaml"),
+		"multi-with-defaults": filepath.Join(tempDir, "multi-defaults.yaml"),
+		"single-repo":         filepath.Join(tempDir, "single-repo.yaml"),
+	}
+
+	// Valid multi-repository configuration
+	validMultiConfig := `version: "1.0"
+repositories:
+  - name: service-a
+    description: Service A
+    private: true
+    topics:
+      - golang
+      - api
+      - microservice
+    features:
+      issues: true
+      wiki: false
+    branch_protection:
+      - pattern: main
+        required_reviews: 2
+        dismiss_stale_reviews: true
+    collaborators:
+      - username: developer1
+        permission: write
+    teams:
+      - team: backend-team
+        permission: admin
+  - name: service-b
+    description: Service B
+    private: false
+    topics:
+      - python
+      - web
+    features:
+      issues: true
+      projects: true
+    webhooks:
+      - url: https://example.com/webhook
+        events:
+          - push
+          - pull_request
+        active: true
+  - name: frontend-app
+    description: Frontend Application
+    private: true
+    topics:
+      - react
+      - frontend
+    features:
+      issues: true
+      wiki: true
+`
+
+	// Invalid multi-repository configuration (duplicate names)
+	invalidMultiConfig := `version: "1.0"
+repositories:
+  - name: service-a
+    description: First service A
+    private: true
+  - name: service-a
+    description: Duplicate service A
+    private: false
+  - name: ""
+    description: Empty name repository
+`
+
+	// Multi-repository configuration with defaults
+	multiWithDefaultsConfig := `version: "1.0"
+defaults:
+  private: true
+  topics:
+    - production
+    - microservice
+  features:
+    issues: true
+    wiki: false
+  branch_protection:
+    - pattern: main
+      required_reviews: 2
+      dismiss_stale_reviews: true
+  collaborators:
+    - username: devops-team
+      permission: admin
+  teams:
+    - team: platform-team
+      permission: write
+repositories:
+  - name: service-with-defaults
+    description: Service using defaults
+  - name: service-with-overrides
+    description: Service with overrides
+    private: false
+    topics:
+      - custom
+      - override
+    branch_protection:
+      - pattern: main
+        required_reviews: 3
+`
+
+	// Single repository configuration for backward compatibility
+	singleRepoConfig := `name: test-repo
+description: Single repository configuration
+private: true
+topics:
+  - testing
+  - single
+features:
+  issues: true
+  wiki: false
+branch_protection:
+  - pattern: main
+    required_reviews: 1
+collaborators:
+  - username: test-user
+    permission: write
+`
+
+	// Write test files
+	testConfigs := map[string]string{
+		"valid-multi":         validMultiConfig,
+		"invalid-multi":       invalidMultiConfig,
+		"multi-with-defaults": multiWithDefaultsConfig,
+		"single-repo":         singleRepoConfig,
+	}
+
+	for key, content := range testConfigs {
+		if err := os.WriteFile(configs[key], []byte(content), 0644); err != nil {
+			t.Fatalf("Failed to create test config %s: %v", key, err)
+		}
+	}
+
+	return configs
+}
