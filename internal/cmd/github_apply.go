@@ -106,7 +106,7 @@ func runGitHubApply(_ *cobra.Command, args []string) error {
 	}
 
 	// Set up GitHub authentication
-	authManager := github.NewAuthManager()
+	authManager := github.NewManager()
 	tokenInfo, err := authManager.AuthenticateFromConfig(context.Background(), cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Authentication failed: %v\n\n", err)

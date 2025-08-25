@@ -102,12 +102,17 @@ func GetConfigPath() (string, error) {
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
+	return c.ValidateAWS()
+}
+
+// ValidateAWS validates AWS-specific configuration
+func (c *Config) ValidateAWS() error {
 	if c.AWS.SSO.StartURL == "" {
-		return fmt.Errorf("AWS SSO start URL is required")
+		return fmt.Errorf("AWS SSO start URL is required. Please configure it in ~/.synacklab/config.yaml")
 	}
 
 	if c.AWS.SSO.Region == "" {
-		return fmt.Errorf("AWS SSO region is required")
+		return fmt.Errorf("AWS SSO region is required. Please configure it in ~/.synacklab/config.yaml")
 	}
 
 	return nil

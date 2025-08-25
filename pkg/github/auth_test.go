@@ -13,14 +13,14 @@ import (
 	"synacklab/pkg/config"
 )
 
-func TestNewAuthManager(t *testing.T) {
-	am := NewAuthManager()
+func TestNewManager(t *testing.T) {
+	am := NewManager()
 	assert.NotNil(t, am)
 	assert.Nil(t, am.client)
 	assert.Empty(t, am.token)
 }
 
-func TestAuthManager_GetToken(t *testing.T) {
+func TestManager_GetToken(t *testing.T) {
 	tests := []struct {
 		name        string
 		envToken    string
@@ -81,7 +81,7 @@ func TestAuthManager_GetToken(t *testing.T) {
 				t.Setenv("GITHUB_TOKEN", tt.envToken)
 			}
 
-			am := NewAuthManager()
+			am := NewManager()
 			token, err := am.GetToken(tt.config)
 
 			if tt.expectError {
@@ -95,7 +95,7 @@ func TestAuthManager_GetToken(t *testing.T) {
 	}
 }
 
-func TestAuthManager_Authenticate(t *testing.T) {
+func TestManager_Authenticate(t *testing.T) {
 	tests := []struct {
 		name        string
 		token       string
@@ -114,7 +114,7 @@ func TestAuthManager_Authenticate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			am := NewAuthManager()
+			am := NewManager()
 			err := am.Authenticate(tt.token)
 
 			if tt.expectError {
@@ -129,7 +129,7 @@ func TestAuthManager_Authenticate(t *testing.T) {
 	}
 }
 
-func TestAuthManager_ValidateToken(t *testing.T) {
+func TestManager_ValidateToken(t *testing.T) {
 	tests := []struct {
 		name           string
 		setupServer    func() *httptest.Server
@@ -185,7 +185,7 @@ func TestAuthManager_ValidateToken(t *testing.T) {
 			server := tt.setupServer()
 			defer server.Close()
 
-			am := NewAuthManager()
+			am := NewManager()
 			err := am.Authenticate("test_token")
 			require.NoError(t, err)
 
@@ -214,8 +214,8 @@ func TestAuthManager_ValidateToken(t *testing.T) {
 	}
 }
 
-func TestAuthManager_ValidateToken_NotAuthenticated(t *testing.T) {
-	am := NewAuthManager()
+func TestManager_ValidateToken_NotAuthenticated(t *testing.T) {
+	am := NewManager()
 	ctx := context.Background()
 
 	tokenInfo, err := am.ValidateToken(ctx)
@@ -225,7 +225,7 @@ func TestAuthManager_ValidateToken_NotAuthenticated(t *testing.T) {
 	assert.Nil(t, tokenInfo)
 }
 
-func TestAuthManager_validatePermissions(t *testing.T) {
+func TestManager_validatePermissions(t *testing.T) {
 	tests := []struct {
 		name        string
 		scopes      []string
@@ -253,7 +253,7 @@ func TestAuthManager_validatePermissions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			am := NewAuthManager()
+			am := NewManager()
 			err := am.validatePermissions(tt.scopes)
 
 			if tt.expectError {
@@ -267,8 +267,8 @@ func TestAuthManager_validatePermissions(t *testing.T) {
 	}
 }
 
-func TestAuthManager_GetClient(t *testing.T) {
-	am := NewAuthManager()
+func TestManager_GetClient(t *testing.T) {
+	am := NewManager()
 
 	// Before authentication
 	assert.Nil(t, am.GetClient())
@@ -279,7 +279,7 @@ func TestAuthManager_GetClient(t *testing.T) {
 	assert.NotNil(t, am.GetClient())
 }
 
-func TestAuthManager_AuthenticateFromConfig(t *testing.T) {
+func TestManager_AuthenticateFromConfig(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/user" {
 			w.Header().Set("X-OAuth-Scopes", "repo,user")
@@ -327,7 +327,7 @@ func TestAuthManager_AuthenticateFromConfig(t *testing.T) {
 				t.Setenv("GITHUB_TOKEN", tt.envToken)
 			}
 
-			am := NewAuthManager()
+			am := NewManager()
 			ctx := context.Background()
 
 			tokenInfo, err := am.AuthenticateFromConfig(ctx, tt.config)

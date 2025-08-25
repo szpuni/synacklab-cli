@@ -156,30 +156,41 @@ func displayContexts(contexts []KubeContextInfo) error {
 }
 
 func selectContextWithFuzzyFinder(contexts []KubeContextInfo) (string, error) {
-	// Create fuzzy finder
-	finder := fuzzy.New("Select a Kubernetes context:")
+	// Create interactive fuzzy finder with consistent key bindings
+	finder := fuzzy.NewInteractiveWithConsistentBindings("🔍 Select Kubernetes context:")
 
-	// Add contexts as options
+	// Build options with consistent metadata
+	var options []fuzzy.Option
 	for _, ctx := range contexts {
+		// Build description with cluster and namespace info
 		description := fmt.Sprintf("Cluster: %s, Namespace: %s", ctx.Cluster, ctx.Namespace)
 		if ctx.IsCurrent {
 			description += " (current)"
 		}
-		finder.AddOption(ctx.Name, description)
+
+		// Add metadata for consistent display
+		metadata := map[string]string{
+			"cluster":   ctx.Cluster,
+			"user":      ctx.User,
+			"namespace": ctx.Namespace,
+			"current":   fmt.Sprintf("%t", ctx.IsCurrent),
+		}
+
+		options = append(options, fuzzy.Option{
+			Value:       ctx.Name,
+			Description: description,
+			Metadata:    metadata,
+		})
 	}
 
-	// Use appropriate selection method
-	var selectedContext string
-	var err error
-
-	if useFilter {
-		selectedContext, err = finder.SelectWithFilter()
-	} else {
-		selectedContext, err = finder.Select()
+	// Set options and select
+	if err := finder.SetOptions(options); err != nil {
+		return "", fmt.Errorf("failed to set finder options: %w", err)
 	}
 
+	selectedContext, err := finder.Select()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("context selection failed: %w", err)
 	}
 
 	return selectedContext, nil

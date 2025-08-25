@@ -1,68 +1,51 @@
-# Technology Stack
+---
+inclusion: always
+---
+
+# Technology Stack & Development Guidelines
 
 ## Language & Runtime
-- **Go 1.21+** - Primary programming language
-- Built as a single binary executable
+- **Go 1.21+** - Primary language, use modern Go idioms and features
+- Single binary executable - no external runtime dependencies
+- Cross-platform support (Linux, macOS, Windows)
 
-## Key Dependencies
-- **github.com/spf13/cobra** - CLI framework for command structure
-- **github.com/aws/aws-sdk-go-v2** - AWS SDK for SSO operations
-- **gopkg.in/ini.v1** - INI file parsing for AWS config files
-- **gopkg.in/yaml.v3** - YAML configuration file support
+## Core Dependencies
+- **github.com/spf13/cobra** - CLI framework, use for all command implementations
+- **github.com/aws/aws-sdk-go-v2** - AWS SDK, prefer v2 over v1 for new code
+- **gopkg.in/ini.v1** - AWS config file parsing only
+- **gopkg.in/yaml.v3** - Configuration files, prefer over JSON
 
-## Build System
-- **Make** - Primary build automation
-- **GoReleaser** - Cross-platform release automation
-- **golangci-lint** - Code linting and formatting
-
-## Common Commands
-
-### Development
+## Development Workflow
+Use Make targets for all development tasks:
 ```bash
-# Install dependencies
-make deps
-
-# Format and lint code
-make fmt
-make vet
-make lint
-
-# Run tests (unit tests only)
-make test
-
-# Run tests with coverage
-make test-coverage
-
-# Build binary
-make build
-
-# Development build with debug info
-make dev-build
+make deps      # Install/update dependencies
+make fmt       # Format code (gofmt + goimports)
+make lint      # Run golangci-lint
+make test      # Unit tests only
+make build     # Production binary
 ```
 
-### Testing
-```bash
-# Unit tests only
-make test
+## Code Style Requirements
+- **Formatting**: Always run `make fmt` before commits
+- **Linting**: Code must pass `golangci-lint` with project config
+- **Error handling**: Use `fmt.Errorf("context: %w", err)` for wrapping
+- **Interfaces**: Define interfaces in consuming packages, not implementing packages
+- **Testing**: Table-driven tests preferred, mock external dependencies
 
-# Integration tests (requires built binary)
-make integration-test
+## Build & Release
+- **Local builds**: Use `make build` for single platform
+- **Cross-compilation**: Use `make build-all` for all platforms  
+- **Releases**: GoReleaser handles automated releases via CI
+- **Integration tests**: Require built binary, run with `make integration-test`
 
-# All tests
-make test && make integration-test
-```
+## Performance Guidelines
+- Commands should complete in <2 seconds for typical operations
+- Use context.Context for cancellation and timeouts
+- Implement rate limiting for external API calls
+- Cache authentication tokens appropriately
 
-### Release
-```bash
-# Cross-compile for all platforms
-make build-all
-
-# Clean build artifacts
-make clean
-```
-
-## Code Quality
-- Uses golangci-lint with custom configuration
-- Enforces gofmt and goimports formatting
-- Requires test coverage for new features
-- CI/CD pipeline runs lint, test, build, and integration tests
+## Security Requirements
+- Never store credentials in plaintext
+- Use AWS SSO tokens exclusively
+- Validate all user inputs
+- Follow principle of least privilege for AWS permissions

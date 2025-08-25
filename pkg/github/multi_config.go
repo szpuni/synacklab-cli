@@ -294,7 +294,12 @@ func LoadMultiRepositoryConfigFromFileStreaming(filename string) (*MultiReposito
 	if err != nil {
 		return nil, fmt.Errorf("failed to open config file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			// Log error but don't override the main function's return value
+			fmt.Fprintf(os.Stderr, "Warning: failed to close file: %v\n", err)
+		}
+	}()
 
 	// Use streaming YAML decoder for memory efficiency
 	decoder := yaml.NewDecoder(file)

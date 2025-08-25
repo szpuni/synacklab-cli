@@ -1,9 +1,14 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"synacklab/internal/auth"
+	"synacklab/pkg/config"
+	"synacklab/pkg/fuzzy"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/ini.v1"
@@ -14,22 +19,70 @@ var (
 	interactive bool
 )
 
-var awsConfigCmd = &cobra.Command{
-	Use:   "config",
-	Short: "Configure AWS SSO default profile",
-	Long: `Set a default AWS profile from existing SSO profiles.
-This command lists available profiles from ~/.aws/config and allows you to select one as the default.
-Run 'synacklab auth sync' first to ensure your profiles are up to date.`,
-	RunE: runAWSConfig,
+var awsCtxCmd = &cobra.Command{
+	Use:   "aws-ctx",
+	Short: "Switch AWS SSO context (profile)",
+	Long: `Switch between AWS SSO profiles with interactive selection.
+This command allows you to select and set a default AWS profile from your existing SSO profiles.
+If you are not authenticated, it will automatically prompt you to authenticate first.
+
+The command provides an interactive fuzzy finder interface for easy profile selection.`,
+	RunE: runAWSCtx,
 }
 
 func init() {
-	awsConfigCmd.Flags().StringVarP(&configFile, "config", "c", "", "Path to configuration file")
-	awsConfigCmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Force interactive mode even with config file")
+	awsCtxCmd.Flags().StringVarP(&configFile, "config", "c", "", "Path to configuration file")
+	awsCtxCmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Force interactive mode even with config file")
 }
 
-func runAWSConfig(_ *cobra.Command, _ []string) error {
-	fmt.Println("⚙️  Configuring AWS default profile...")
+func runAWSCtx(_ *cobra.Command, _ []string) error {
+	ctx := context.Background()
+
+	fmt.Println("🔄 Switching AWS SSO context...")
+
+	// Initialize authentication manager
+	authManager, err := auth.NewManager()
+	if err != nil {
+		return fmt.Errorf("failed to initialize authentication manager: %w", err)
+	}
+
+	// Check authentication status
+	isAuthenticated, err := authManager.IsAuthenticated(ctx)
+	if err != nil {
+		// Handle authentication check errors with user-friendly messages
+		var authErr *auth.Error
+		if errors.As(err, &authErr) {
+			fmt.Printf("❌ %s%s\n", authErr.Message, authErr.GetTroubleshootingMessage())
+			return fmt.Errorf("authentication check failed")
+		}
+		return fmt.Errorf("failed to check authentication status: %w", err)
+	}
+
+	// Auto-authenticate if not authenticated
+	if !isAuthenticated {
+		fmt.Println("🔐 You are not authenticated to AWS SSO")
+		fmt.Println("🚀 Starting automatic authentication...")
+
+		// Load configuration for authentication
+		appConfig, err := config.LoadConfig()
+		if err != nil {
+			return fmt.Errorf("failed to load configuration: %w", err)
+		}
+
+		// Perform authentication with enhanced error handling
+		_, err = authManager.Authenticate(ctx, appConfig)
+		if err != nil {
+			// Handle structured authentication errors
+			var authErr *auth.Error
+			if errors.As(err, &authErr) {
+				fmt.Printf("❌ %s%s\n", authErr.Message, authErr.GetTroubleshootingMessage())
+				return fmt.Errorf("authentication failed")
+			}
+			return fmt.Errorf("authentication failed: %w", err)
+		}
+
+		fmt.Println("✅ Authentication successful!")
+	}
 
 	// Check if AWS config exists
 	homeDir, err := os.UserHomeDir()
@@ -50,8 +103,8 @@ func runAWSConfig(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	// Find all profile sections
-	var profiles []string
+	// Find all profile sections and build options for fuzzy finder
+	var options []fuzzy.Option
 	for _, section := range cfg.Sections() {
 		if section.Name() != "DEFAULT" && section.Name() != "default" {
 			// Remove "profile " prefix if present
@@ -59,44 +112,51 @@ func runAWSConfig(_ *cobra.Command, _ []string) error {
 			if len(profileName) > 8 && profileName[:8] == "profile " {
 				profileName = profileName[8:]
 			}
-			profiles = append(profiles, profileName)
+
+			// Get profile metadata
+			accountID := section.Key("sso_account_id").String()
+			roleName := section.Key("sso_role_name").String()
+			region := section.Key("region").String()
+			startURL := section.Key("sso_start_url").String()
+
+			// Build description with account and role info
+			description := fmt.Sprintf("Account: %s, Role: %s", accountID, roleName)
+			if region != "" {
+				description += fmt.Sprintf(", Region: %s", region)
+			}
+
+			// Add metadata for consistent display
+			metadata := map[string]string{
+				"account_id": accountID,
+				"role_name":  roleName,
+				"region":     region,
+				"start_url":  startURL,
+			}
+
+			options = append(options, fuzzy.Option{
+				Value:       profileName,
+				Description: description,
+				Metadata:    metadata,
+			})
 		}
 	}
 
-	if len(profiles) == 0 {
+	if len(options) == 0 {
 		fmt.Println("❌ No profiles found in AWS config")
 		fmt.Println("💡 Run 'synacklab auth sync' first to create profiles from AWS SSO")
 		return nil
 	}
 
-	// Display available profiles
-	fmt.Println("\n📋 Available AWS profiles:")
-	for i, profile := range profiles {
-		sectionName := fmt.Sprintf("profile %s", profile)
-		section := cfg.Section(sectionName)
-
-		accountID := section.Key("sso_account_id").String()
-		roleName := section.Key("sso_role_name").String()
-
-		fmt.Printf("%d. %s", i+1, profile)
-		if accountID != "" && roleName != "" {
-			fmt.Printf(" (Account: %s, Role: %s)", accountID, roleName)
-		}
-		fmt.Println()
+	// Use interactive fuzzy finder for profile selection with consistent key bindings
+	finder := fuzzy.NewInteractiveWithConsistentBindings("🔍 Select AWS profile to set as default:")
+	if err := finder.SetOptions(options); err != nil {
+		return fmt.Errorf("failed to set finder options: %w", err)
 	}
 
-	// Let user choose profile
-	fmt.Print("\nSelect profile number to set as default: ")
-	var choice int
-	if _, err := fmt.Scanln(&choice); err != nil {
-		return fmt.Errorf("failed to read selection: %w", err)
+	selectedProfile, err := finder.Select()
+	if err != nil {
+		return fmt.Errorf("profile selection failed: %w", err)
 	}
-
-	if choice < 1 || choice > len(profiles) {
-		return fmt.Errorf("invalid selection")
-	}
-
-	selectedProfile := profiles[choice-1]
 
 	// Copy selected profile configuration to default section
 	err = setDefaultProfile(cfg, selectedProfile, configPath)
@@ -111,11 +171,13 @@ func runAWSConfig(_ *cobra.Command, _ []string) error {
 func setDefaultProfile(cfg *ini.File, profileName, configPath string) error {
 	// Get the selected profile section
 	profileSectionName := fmt.Sprintf("profile %s", profileName)
-	profileSection := cfg.Section(profileSectionName)
 
-	if profileSection == nil {
+	// Check if section exists
+	if !cfg.HasSection(profileSectionName) {
 		return fmt.Errorf("profile section not found: %s", profileSectionName)
 	}
+
+	profileSection := cfg.Section(profileSectionName)
 
 	// Create or get default section
 	var defaultSection *ini.Section

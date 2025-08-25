@@ -9,13 +9,12 @@ var authCmd = &cobra.Command{
 	Short: "Authentication commands",
 	Long: `Commands for managing authentication with various cloud providers.
 
-Available commands:
-  sync   - Sync AWS SSO profiles to local configuration
-  config - Set default AWS profile from existing profiles`,
+Use the subcommands to authenticate with AWS SSO and manage your authentication contexts.`,
 }
 
 func init() {
-	authCmd.AddCommand(awsConfigCmd)
+	authCmd.AddCommand(awsLoginCmd)
+	authCmd.AddCommand(awsCtxCmd)
 	authCmd.AddCommand(awsSyncCmd)
 	authCmd.AddCommand(eksConfigCmd)
 	authCmd.AddCommand(eksCtxCmd)

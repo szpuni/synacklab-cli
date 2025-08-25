@@ -1,16 +1,32 @@
+---
+inclusion: always
+---
+
 # Product Overview
 
-Synacklab is a command-line tool for DevOps engineers to manage day to day tasks. 
+Synacklab is a CLI tool for DevOps engineers to streamline AWS SSO authentication and profile management.
 
 ## Core Features
-- AWS SSO device authorization flow
-- List and select from available AWS profiles (accounts + roles)
-- Set default profile in `.aws/config`
-- Configuration file support for SSO settings
-- Interactive and non-interactive modes
+- **AWS SSO Authentication**: Device authorization flow with automatic token refresh
+- **Profile Management**: List, select, and switch between AWS accounts and roles
+- **Configuration Management**: Update `~/.aws/config` with selected profiles
+- **Multi-Mode Operation**: Interactive fuzzy selection and non-interactive scripting support
+- **GitHub Integration**: Repository management and configuration (planned/in development)
 
-## Target Users
-DevOps engineers who need to frequently switch between AWS accounts and roles using SSO authentication.
+## User Experience Principles
+- **Zero-friction workflow**: Minimize steps between authentication and productive work
+- **Fail-fast validation**: Clear error messages with actionable guidance
+- **Consistent interface**: Predictable command patterns across all features
+- **Scriptable by default**: All interactive features have non-interactive equivalents
 
-## Key Value Proposition
-Simplifies the AWS SSO authentication process and profile management, reducing the manual steps required to configure AWS CLI profiles.
+## Development Guidelines
+- **User-centric design**: Every feature should solve a real DevOps workflow pain point
+- **Backward compatibility**: Configuration and CLI changes must be non-breaking
+- **Security first**: Never store credentials in plaintext; use AWS SSO tokens only
+- **Performance matters**: Commands should complete in <2 seconds for typical operations
+
+## Configuration Conventions
+- User config: `~/.synacklab/config.yaml`
+- AWS config updates: `~/.aws/config` (standard AWS CLI location)
+- Example configs: Always provide working examples in `config.example.yaml`
+- Validation: All config should be validated on load with helpful error messages

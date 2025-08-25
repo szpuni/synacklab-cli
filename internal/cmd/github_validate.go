@@ -135,7 +135,7 @@ func runSingleRepositoryValidation(repoConfig *github.RepositoryConfig, configFi
 	}
 
 	// Try to authenticate for GitHub API validation
-	authManager := github.NewAuthManager()
+	authManager := github.NewManager()
 	tokenInfo, err := authManager.AuthenticateFromConfig(context.Background(), cfg)
 	if err != nil {
 		fmt.Printf("⚠️  GitHub authentication failed: %v\n", err)
@@ -268,7 +268,7 @@ func runMultiRepositoryValidation(multiConfig *github.MultiRepositoryConfig, con
 	}
 
 	// Try to authenticate for GitHub API validation
-	authManager := github.NewAuthManager()
+	authManager := github.NewManager()
 	tokenInfo, err := authManager.AuthenticateFromConfig(context.Background(), cfg)
 	if err != nil {
 		fmt.Printf("⚠️  GitHub authentication failed: %v\n", err)

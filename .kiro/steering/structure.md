@@ -1,57 +1,71 @@
-# Project Structure
+---
+inclusion: always
+---
 
-## Directory Organization
+# Project Structure & Architecture
 
-```
-synacklab/
-├── cmd/synacklab/           # Application entry point
-│   └── main.go             # Main function - calls internal/cmd.Execute()
-├── internal/cmd/           # Internal command implementations (not exported)
-│   ├── root.go            # Root command and CLI setup
-│   ├── auth.go            # Auth command group
-│   ├── aws_config.go      # AWS SSO configuration logic
-│   ├── init.go            # Init command implementation
-│   └── *_test.go          # Unit tests alongside implementation
-├── pkg/config/            # Public configuration package (exportable)
-│   ├── config.go          # Configuration structs and loading
-│   └── config_test.go     # Configuration tests
-├── test/integration/      # Integration tests
-│   └── cli_test.go        # End-to-end CLI testing
-├── bin/                   # Build output directory
-├── .github/workflows/     # CI/CD pipeline definitions
-├── go.mod                 # Go module definition
-├── Makefile              # Build automation
-└── config.example.yaml   # Example configuration file
-```
+## Package Organization Rules
 
-## Architecture Patterns
+### Core Directories
+- `cmd/synacklab/` - Entry point only, minimal main.go that calls internal/cmd.Execute()
+- `internal/cmd/` - All CLI command implementations (private, not exportable)
+- `pkg/` - Public packages that could be imported by external projects
+- `test/integration/` - End-to-end tests requiring built binary
 
-### Command Structure
-- Uses **Cobra CLI framework** for command hierarchy
-- Root command in `internal/cmd/root.go` with subcommands
-- Each command group has its own file (e.g., `auth.go` for auth commands)
-- Main entry point is minimal - delegates to internal packages
+### Command Implementation Pattern
+- Use Cobra CLI framework exclusively
+- Root command in `internal/cmd/root.go`
+- Each command group gets its own file (auth.go, github.go, etc.)
+- Commands should be thin wrappers around pkg/ functionality
+- Always include both interactive and non-interactive modes
 
-### Package Organization
-- **cmd/** - Application entry points only
-- **internal/** - Private packages not meant for external use
-- **pkg/** - Public packages that could be imported by other projects
-- **test/** - Integration and end-to-end tests
+### File Placement Rules
+- New CLI commands: Add to `internal/cmd/`
+- Reusable business logic: Add to `pkg/`
+- Unit tests: Place alongside implementation (`*_test.go`)
+- Integration tests: Place in `test/integration/`
+- Configuration structs: Place in `pkg/config/`
 
-### Testing Strategy
-- Unit tests alongside implementation files (`*_test.go`)
-- Integration tests in separate `test/` directory
-- Use build tags for integration tests (`-tags integration`)
-- CI runs unit tests first, then integration tests with built binary
+## Testing Requirements
 
-### Configuration
-- YAML configuration files supported
-- Example config provided as `config.example.yaml`
-- User config stored in `~/.synacklab/config.yaml`
-- AWS config updates written to `~/.aws/config`
+### Test Organization
+- Unit tests must be co-located with implementation files
+- Integration tests require `// +build integration` build tag
+- Use table-driven tests for multiple scenarios
+- Mock external dependencies (AWS APIs, GitHub APIs)
 
-## Naming Conventions
-- Go standard naming (PascalCase for exported, camelCase for unexported)
+### Test Execution Order
+1. Unit tests run first (`make test`)
+2. Integration tests require built binary (`make integration-test`)
+3. CI pipeline enforces this order
+
+## Configuration Conventions
+
+### File Locations
+- User config: `~/.synacklab/config.yaml`
+- AWS config updates: `~/.aws/config` (standard AWS CLI location)
+- Example configs: `config.example.yaml` in project root
+
+### Configuration Rules
+- All config must be validated on load with clear error messages
+- Support both YAML and environment variable overrides
+- Never store credentials - use AWS SSO tokens only
+- Provide working examples for all configuration options
+
+## Code Organization Patterns
+
+### Error Handling
+- Use custom error types in `pkg/` packages
+- Wrap errors with context using `fmt.Errorf("context: %w", err)`
+- CLI commands should handle errors gracefully with user-friendly messages
+
+### Dependency Injection
+- Pass dependencies as parameters, not globals
+- Use interfaces for external dependencies (AWS SDK, GitHub API)
+- Keep main.go minimal - business logic belongs in pkg/
+
+### Naming Standards
+- Go standard conventions (PascalCase exported, camelCase unexported)
+- CLI commands use kebab-case (`aws-config`, not `awsConfig`)
+- Package names are lowercase, single word when possible
 - Test files end with `_test.go`
-- Integration tests use build tag `// +build integration`
-- Binary name matches module name (`synacklab`)

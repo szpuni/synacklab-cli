@@ -12,6 +12,7 @@ import (
 type Option struct {
 	Value       string
 	Description string
+	Metadata    map[string]string
 }
 
 // Finder represents a fuzzy finder instance
@@ -33,6 +34,19 @@ func (f *Finder) AddOption(value, description string) {
 	f.options = append(f.options, Option{
 		Value:       value,
 		Description: description,
+		Metadata:    make(map[string]string),
+	})
+}
+
+// AddOptionWithMetadata adds an option with metadata to the fuzzy finder
+func (f *Finder) AddOptionWithMetadata(value, description string, metadata map[string]string) {
+	if metadata == nil {
+		metadata = make(map[string]string)
+	}
+	f.options = append(f.options, Option{
+		Value:       value,
+		Description: description,
+		Metadata:    metadata,
 	})
 }
 

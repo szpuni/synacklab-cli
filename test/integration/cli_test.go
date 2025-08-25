@@ -76,9 +76,9 @@ func TestCLIIntegration(t *testing.T) {
 			expected: "auth",
 		},
 		{
-			name:     "auth config help",
-			args:     []string{"auth", "config", "--help"},
-			expected: "Set a default AWS profile from existing SSO profiles",
+			name:     "auth aws-ctx help",
+			args:     []string{"auth", "aws-ctx", "--help"},
+			expected: "Switch between AWS SSO profiles",
 		},
 		{
 			name:     "auth sync help",

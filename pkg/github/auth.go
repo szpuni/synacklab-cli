@@ -12,19 +12,19 @@ import (
 	"synacklab/pkg/config"
 )
 
-// AuthManager handles GitHub authentication
-type AuthManager struct {
+// Manager handles GitHub authentication
+type Manager struct {
 	client *github.Client
 	token  string
 }
 
-// NewAuthManager creates a new authentication manager
-func NewAuthManager() *AuthManager {
-	return &AuthManager{}
+// NewManager creates a new authentication manager
+func NewManager() *Manager {
+	return &Manager{}
 }
 
 // GetToken retrieves the GitHub token from environment variable or config file
-func (am *AuthManager) GetToken(cfg *config.Config) (string, error) {
+func (am *Manager) GetToken(cfg *config.Config) (string, error) {
 	// First, check environment variable
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
 		return strings.TrimSpace(token), nil
@@ -39,7 +39,7 @@ func (am *AuthManager) GetToken(cfg *config.Config) (string, error) {
 }
 
 // Authenticate sets up the GitHub client with the provided token
-func (am *AuthManager) Authenticate(token string) error {
+func (am *Manager) Authenticate(token string) error {
 	if token == "" {
 		return fmt.Errorf("GitHub token cannot be empty")
 	}
@@ -58,7 +58,7 @@ func (am *AuthManager) Authenticate(token string) error {
 }
 
 // ValidateToken validates the GitHub token and checks permissions
-func (am *AuthManager) ValidateToken(ctx context.Context) (*TokenInfo, error) {
+func (am *Manager) ValidateToken(ctx context.Context) (*TokenInfo, error) {
 	if am.client == nil {
 		return nil, fmt.Errorf("not authenticated: call Authenticate() first")
 	}
@@ -95,7 +95,7 @@ func (am *AuthManager) ValidateToken(ctx context.Context) (*TokenInfo, error) {
 }
 
 // validatePermissions checks if the token has required permissions
-func (am *AuthManager) validatePermissions(scopes []string) error {
+func (am *Manager) validatePermissions(scopes []string) error {
 	requiredScopes := []string{"repo"}
 	scopeMap := make(map[string]bool)
 
@@ -119,7 +119,7 @@ func (am *AuthManager) validatePermissions(scopes []string) error {
 }
 
 // GetClient returns the authenticated GitHub client
-func (am *AuthManager) GetClient() *github.Client {
+func (am *Manager) GetClient() *github.Client {
 	return am.client
 }
 
@@ -130,7 +130,7 @@ type TokenInfo struct {
 }
 
 // AuthenticateFromConfig is a convenience method that handles the full authentication flow
-func (am *AuthManager) AuthenticateFromConfig(ctx context.Context, cfg *config.Config) (*TokenInfo, error) {
+func (am *Manager) AuthenticateFromConfig(ctx context.Context, cfg *config.Config) (*TokenInfo, error) {
 	// Get token from environment or config
 	token, err := am.GetToken(cfg)
 	if err != nil {
