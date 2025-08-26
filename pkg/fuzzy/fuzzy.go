@@ -60,11 +60,34 @@ func (f *Finder) Select() (string, error) {
 	fmt.Println(f.prompt)
 	fmt.Println(strings.Repeat("-", len(f.prompt)))
 
-	// Display options
+	// Display header if we have AWS profile-like options (check for account_id metadata)
+	if len(f.options) > 0 && f.options[0].Metadata != nil {
+		if _, hasAccountID := f.options[0].Metadata["account_id"]; hasAccountID {
+			// Calculate max value length for header alignment
+			maxValueLen := 0
+			for _, option := range f.options {
+				if len(option.Value) > maxValueLen {
+					maxValueLen = len(option.Value)
+				}
+			}
+			fmt.Printf("    %-*s  │  %s\n", maxValueLen, "Profile", "Details")
+			fmt.Printf("    %s  │  %s\n", strings.Repeat("─", maxValueLen), strings.Repeat("─", 50))
+		}
+	}
+
+	// Calculate max value length for alignment
+	maxValueLen := 0
+	for _, option := range f.options {
+		if len(option.Value) > maxValueLen {
+			maxValueLen = len(option.Value)
+		}
+	}
+
+	// Display options with consistent formatting
 	for i, option := range f.options {
-		fmt.Printf("%d. %s", i+1, option.Value)
+		fmt.Printf("%d. %-*s", i+1, maxValueLen, option.Value)
 		if option.Description != "" {
-			fmt.Printf(" - %s", option.Description)
+			fmt.Printf("  │  %s", option.Description)
 		}
 		fmt.Println()
 	}
@@ -134,12 +157,20 @@ func (f *Finder) SelectWithFilter() (string, error) {
 			continue
 		}
 
-		// Display filtered options
+		// Calculate max value length for filtered options alignment
+		maxFilteredValueLen := 0
+		for _, option := range filtered {
+			if len(option.Value) > maxFilteredValueLen {
+				maxFilteredValueLen = len(option.Value)
+			}
+		}
+
+		// Display filtered options with consistent formatting
 		fmt.Printf("\nFiltered options (matching '%s'):\n", input)
 		for i, option := range filtered {
-			fmt.Printf("%d. %s", i+1, option.Value)
+			fmt.Printf("%d. %-*s", i+1, maxFilteredValueLen, option.Value)
 			if option.Description != "" {
-				fmt.Printf(" - %s", option.Description)
+				fmt.Printf("  │  %s", option.Description)
 			}
 			fmt.Println()
 		}

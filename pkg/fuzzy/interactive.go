@@ -318,6 +318,21 @@ func (f *InteractiveFinderImpl) render() {
 	fmt.Printf("Filter: %s\n", f.filterText)
 	fmt.Println(strings.Repeat("-", f.getTerminalWidth()))
 
+	// Display header if we have AWS profile-like options (check for account_id metadata)
+	if len(f.filteredOptions) > 0 && f.filteredOptions[0].Metadata != nil {
+		if _, hasAccountID := f.filteredOptions[0].Metadata["account_id"]; hasAccountID {
+			// Calculate max profile name length for header alignment
+			maxValueLen := 0
+			for i := 0; i < len(f.filteredOptions) && i < f.maxDisplayRows; i++ {
+				if len(f.filteredOptions[i].Value) > maxValueLen {
+					maxValueLen = len(f.filteredOptions[i].Value)
+				}
+			}
+			fmt.Printf("  %-*s  │  %s\n", maxValueLen, "Profile", "Details")
+			fmt.Printf("  %s  │  %s\n", strings.Repeat("─", maxValueLen), strings.Repeat("─", 50))
+		}
+	}
+
 	// Display options
 	if len(f.filteredOptions) == 0 {
 		if f.filterText == "" {
@@ -335,6 +350,14 @@ func (f *InteractiveFinderImpl) render() {
 		end = len(f.filteredOptions)
 	}
 
+	// Calculate max profile name length for alignment
+	maxValueLen := 0
+	for i := start; i < end; i++ {
+		if len(f.filteredOptions[i].Value) > maxValueLen {
+			maxValueLen = len(f.filteredOptions[i].Value)
+		}
+	}
+
 	// Display visible options with consistent metadata formatting
 	for i := start; i < end; i++ {
 		option := f.filteredOptions[i]
@@ -343,12 +366,12 @@ func (f *InteractiveFinderImpl) render() {
 			prefix = "> "
 		}
 
-		// Display option value with consistent formatting
-		fmt.Printf("%s%s", prefix, option.Value)
+		// Display option value with consistent formatting and alignment
+		fmt.Printf("%s%-*s", prefix, maxValueLen, option.Value)
 
-		// Display description if available
+		// Display description if available with proper spacing
 		if option.Description != "" {
-			fmt.Printf(" - %s", option.Description)
+			fmt.Printf("  │  %s", option.Description)
 		}
 
 		// Display additional metadata if available

@@ -105,6 +105,18 @@ func runAWSCtx(_ *cobra.Command, _ []string) error {
 
 	// Find all profile sections and build options for fuzzy finder
 	var options []fuzzy.Option
+	var maxProfileLen, maxAccountLen, maxRoleLen int
+
+	// First pass: collect all profiles and calculate max lengths for alignment
+	type profileInfo struct {
+		name      string
+		accountID string
+		roleName  string
+		region    string
+		startURL  string
+	}
+	var profiles []profileInfo
+
 	for _, section := range cfg.Sections() {
 		if section.Name() != "DEFAULT" && section.Name() != "default" {
 			// Remove "profile " prefix if present
@@ -119,26 +131,48 @@ func runAWSCtx(_ *cobra.Command, _ []string) error {
 			region := section.Key("region").String()
 			startURL := section.Key("sso_start_url").String()
 
-			// Build description with account and role info
-			description := fmt.Sprintf("Account: %s, Role: %s", accountID, roleName)
-			if region != "" {
-				description += fmt.Sprintf(", Region: %s", region)
-			}
-
-			// Add metadata for consistent display
-			metadata := map[string]string{
-				"account_id": accountID,
-				"role_name":  roleName,
-				"region":     region,
-				"start_url":  startURL,
-			}
-
-			options = append(options, fuzzy.Option{
-				Value:       profileName,
-				Description: description,
-				Metadata:    metadata,
+			profiles = append(profiles, profileInfo{
+				name:      profileName,
+				accountID: accountID,
+				roleName:  roleName,
+				region:    region,
+				startURL:  startURL,
 			})
+
+			// Track max lengths for alignment
+			if len(profileName) > maxProfileLen {
+				maxProfileLen = len(profileName)
+			}
+			if len(accountID) > maxAccountLen {
+				maxAccountLen = len(accountID)
+			}
+			if len(roleName) > maxRoleLen {
+				maxRoleLen = len(roleName)
+			}
 		}
+	}
+
+	// Second pass: build formatted options with proper alignment
+	for _, profile := range profiles {
+		// Build aligned description with consistent spacing
+		description := fmt.Sprintf("Account: %-*s | Role: %-*s | Region: %s",
+			maxAccountLen, profile.accountID,
+			maxRoleLen, profile.roleName,
+			profile.region)
+
+		// Add metadata for consistent display
+		metadata := map[string]string{
+			"account_id": profile.accountID,
+			"role_name":  profile.roleName,
+			"region":     profile.region,
+			"start_url":  profile.startURL,
+		}
+
+		options = append(options, fuzzy.Option{
+			Value:       profile.name,
+			Description: description,
+			Metadata:    metadata,
+		})
 	}
 
 	if len(options) == 0 {
