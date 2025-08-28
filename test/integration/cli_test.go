@@ -147,6 +147,12 @@ func TestAWSLoginBrowserIntegration(t *testing.T) {
 				t.Logf("Failed to remove test binary: %v", err)
 			}
 		}()
+	} else {
+		// Convert relative path to absolute path from project root
+		if !filepath.IsAbs(binaryPath) {
+			projectRoot := getProjectRoot()
+			binaryPath = filepath.Join(projectRoot, binaryPath)
+		}
 	}
 
 	// Test that the aws-login command exists and shows help
