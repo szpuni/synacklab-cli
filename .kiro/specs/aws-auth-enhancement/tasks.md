@@ -88,10 +88,46 @@
   - Run tests and linters (golangci-lint run --no-config --timeout=5m) to make sure that code is fully functional
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 4.4, 4.5_
 
-- [ ] 12. Create integration tests for fuzzy finder
-  - Test fuzzy finder integration with real AWS profile data from config files
-  - Test filtering performance and accuracy with various input patterns
-  - Test selection handling and result processing
+- [x] 12. Implement automatic browser opening for AWS SSO authentication
+  - Add browser opening functionality to authentication manager
+  - Replace manual URL display and Enter key wait with automatic browser launch
+  - Implement polling mechanism to check for authorization completion
+  - Add cross-platform browser opening support (macOS, Linux, Windows)
+  - Handle cases where browser opening fails with graceful fallback
+  - Run tests and linters (golangci-lint run --no-config --timeout=5m) to make sure that code is fully functional
+  - _Requirements: 1.2, 1.3_
+
+- [x] 13. Replace custom fuzzy finder with fzf library integration
+  - ✅ Add fzf library dependency (github.com/junegunn/fzf) to go.mod
+  - ✅ Create new fzf-based finder implementation in pkg/fuzzy/fzf.go
+  - ✅ Implement fzf library integration using temporary files and stdin/stdout redirection
+  - ✅ Add fallback to simple selection when fzf execution fails
+  - ✅ Update all commands (aws-ctx, eks-ctx) to use new fzf-based finder
+  - ✅ Maintain existing FzfFinderInterface for compatibility
+  - ✅ Run tests and linters (golangci-lint run --no-config --timeout=5m) to make sure that code is fully functional
+  - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8_
+
+- [x] 13.1. Add --no-auth flag to aws-ctx command
+  - Add --no-auth flag definition to aws-ctx command
+  - Modify aws-ctx logic to skip auto-authentication when flag is present
+  - Return clear error message when not authenticated and --no-auth is used
+  - Update command help text to document the new flag
+  - Run tests and linters (golangci-lint run --no-config --timeout=5m) to make sure that code is fully functional
+  - _Requirements: 1.7_
+
+- [ ] 14. Create integration tests for enhanced authentication flow
+  - Test complete aws-login command with automatic browser opening
+  - Test polling mechanism for authorization completion
+  - Test fallback behavior when browser opening fails
+  - Test cross-platform compatibility for browser opening
+  - Run tests and linters (golangci-lint run --no-config --timeout=5m) to make sure that code is fully functional
+  - _Requirements: 1.1, 1.2, 1.3, 1.4_
+
+- [ ] 15. Create integration tests for fzf-based fuzzy finder
+  - Test fzf integration with real AWS profile data from config files
+  - Test fzf filtering performance and accuracy with various input patterns
+  - Test selection handling and result processing with fzf
+  - Test fallback behavior when fzf is not available on the system
   - Test consistent behavior across different terminal environments
   - Run tests and linters (golangci-lint run --no-config --timeout=5m) to make sure that code is fully functional
-  - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 5.1, 5.2, 5.3, 5.4, 5.5_
+  - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 5.1, 5.2, 5.3, 5.4, 5.5_

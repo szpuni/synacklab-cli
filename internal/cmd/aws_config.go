@@ -17,6 +17,7 @@ import (
 var (
 	configFile  string
 	interactive bool
+	noAuth      bool
 )
 
 var awsCtxCmd = &cobra.Command{
@@ -24,15 +25,19 @@ var awsCtxCmd = &cobra.Command{
 	Short: "Switch AWS SSO context (profile)",
 	Long: `Switch between AWS SSO profiles with interactive selection.
 This command allows you to select and set a default AWS profile from your existing SSO profiles.
-If you are not authenticated, it will automatically prompt you to authenticate first.
+If you are not authenticated, it will automatically prompt you to authenticate first unless --no-auth is specified.
 
-The command provides an interactive fuzzy finder interface for easy profile selection.`,
+The command provides an interactive fuzzy finder interface for easy profile selection.
+
+Flags:
+  --no-auth    Skip automatic authentication and allow profile switching without AWS SSO authentication`,
 	RunE: runAWSCtx,
 }
 
 func init() {
 	awsCtxCmd.Flags().StringVarP(&configFile, "config", "c", "", "Path to configuration file")
 	awsCtxCmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Force interactive mode even with config file")
+	awsCtxCmd.Flags().BoolVar(&noAuth, "no-auth", false, "Skip automatic authentication and allow profile switching without AWS SSO authentication")
 }
 
 func runAWSCtx(_ *cobra.Command, _ []string) error {
@@ -58,30 +63,35 @@ func runAWSCtx(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to check authentication status: %w", err)
 	}
 
-	// Auto-authenticate if not authenticated
+	// Handle authentication based on --no-auth flag
 	if !isAuthenticated {
-		fmt.Println("🔐 You are not authenticated to AWS SSO")
-		fmt.Println("🚀 Starting automatic authentication...")
+		if noAuth {
+			fmt.Println("⚠️  You are not authenticated to AWS SSO")
+			fmt.Println("🔄 Proceeding with profile switching without authentication (--no-auth flag specified)")
+		} else {
+			fmt.Println("🔐 You are not authenticated to AWS SSO")
+			fmt.Println("🚀 Starting automatic authentication...")
 
-		// Load configuration for authentication
-		appConfig, err := config.LoadConfig()
-		if err != nil {
-			return fmt.Errorf("failed to load configuration: %w", err)
-		}
-
-		// Perform authentication with enhanced error handling
-		_, err = authManager.Authenticate(ctx, appConfig)
-		if err != nil {
-			// Handle structured authentication errors
-			var authErr *auth.Error
-			if errors.As(err, &authErr) {
-				fmt.Printf("❌ %s%s\n", authErr.Message, authErr.GetTroubleshootingMessage())
-				return fmt.Errorf("authentication failed")
+			// Load configuration for authentication
+			appConfig, err := config.LoadConfig()
+			if err != nil {
+				return fmt.Errorf("failed to load configuration: %w", err)
 			}
-			return fmt.Errorf("authentication failed: %w", err)
-		}
 
-		fmt.Println("✅ Authentication successful!")
+			// Perform authentication with enhanced error handling
+			_, err = authManager.Authenticate(ctx, appConfig)
+			if err != nil {
+				// Handle structured authentication errors
+				var authErr *auth.Error
+				if errors.As(err, &authErr) {
+					fmt.Printf("❌ %s%s\n", authErr.Message, authErr.GetTroubleshootingMessage())
+					return fmt.Errorf("authentication failed")
+				}
+				return fmt.Errorf("authentication failed: %w", err)
+			}
+
+			fmt.Println("✅ Authentication successful!")
+		}
 	}
 
 	// Check if AWS config exists
@@ -181,8 +191,8 @@ func runAWSCtx(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	// Use interactive fuzzy finder for profile selection with consistent key bindings
-	finder := fuzzy.NewInteractiveWithConsistentBindings("🔍 Select AWS profile to set as default:")
+	// Use fzf-based fuzzy finder for profile selection
+	finder := fuzzy.NewFzf("🔍 Select AWS profile to set as default:")
 	if err := finder.SetOptions(options); err != nil {
 		return fmt.Errorf("failed to set finder options: %w", err)
 	}

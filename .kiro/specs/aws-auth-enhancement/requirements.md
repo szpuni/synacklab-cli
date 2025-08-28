@@ -8,29 +8,33 @@ This feature enhances the AWS authentication capabilities of the synacklab CLI t
 
 ### Requirement 1
 
-**User Story:** As a DevOps engineer, I want to authenticate to AWS SSO and then switch contexts in separate commands, so that I have better control over my authentication workflow and can troubleshoot login issues independently from context switching.
+**User Story:** As a DevOps engineer, I want to authenticate to AWS SSO with automatic browser opening and seamless flow, so that I don't need to manually copy URLs or wait for manual confirmation steps during authentication.
 
 #### Acceptance Criteria
 
 1. WHEN I execute `synacklab auth aws-login` THEN the system SHALL initiate AWS SSO device authorization flow
-2. WHEN the AWS SSO login is successful THEN the system SHALL store authentication credentials locally
-3. WHEN I execute `synacklab auth aws-ctx` THEN the system SHALL allow me to switch between available AWS profiles without re-authenticating
-4. IF I am not authenticated to AWS WHEN I execute `synacklab auth aws-ctx` THEN the system SHALL display a message indicating I need to authenticate and automatically proceed to authenticate the user
-5. WHEN I execute `synacklab auth config` THEN the system SHALL display a deprecation warning and redirect to `synacklab auth aws-ctx`
+2. WHEN the device authorization starts THEN the system SHALL automatically open the verification URL in the default browser
+3. WHEN the browser opens THEN the system SHALL continuously poll for authorization completion without requiring user to press Enter
+4. WHEN the AWS SSO login is successful THEN the system SHALL store authentication credentials locally
+5. WHEN I execute `synacklab auth aws-ctx` THEN the system SHALL allow me to switch between available AWS profiles without re-authenticating
+6. IF I am not authenticated to AWS WHEN I execute `synacklab auth aws-ctx` THEN the system SHALL display a message indicating I need to authenticate and automatically proceed to authenticate the user
+7. WHEN I execute `synacklab auth aws-ctx --no-auth` THEN the system SHALL skip automatic authentication and exit with an error if not authenticated
+8. WHEN I execute `synacklab auth config` THEN the system SHALL display a deprecation warning and redirect to `synacklab auth aws-ctx`
 
 ### Requirement 2
 
-**User Story:** As a DevOps engineer, I want an interactive fuzzy finder interface for selecting AWS profiles and Kubernetes contexts, so that I can quickly find and select the option I need without having to remember exact names or positions in a list.
+**User Story:** As a DevOps engineer, I want to use the proven fzf library for fuzzy finding instead of a custom implementation, so that I have a reliable, well-tested, and familiar interface for selecting AWS profiles and Kubernetes contexts.
 
 #### Acceptance Criteria
 
-1. WHEN the system displays a list of AWS profiles or Kubernetes contexts THEN it SHALL present an interactive interface similar to fzf
-2. WHEN I type characters in the fuzzy finder THEN the system SHALL filter the displayed options in real-time based on my input
-3. WHEN I use arrow keys (up/down) THEN the system SHALL navigate through the filtered options
+1. WHEN the system needs to display a selection interface THEN it SHALL use the fzf library (github.com/junegunn/fzf) as the underlying fuzzy finder
+2. WHEN I type characters in the fuzzy finder THEN the system SHALL filter the displayed options in real-time using fzf's proven algorithms
+3. WHEN I use arrow keys (up/down) or vim keys (j/k) THEN the system SHALL navigate through the filtered options using fzf's navigation
 4. WHEN I press Enter THEN the system SHALL select the currently highlighted option
 5. WHEN I press Escape or Ctrl+C THEN the system SHALL cancel the selection and exit gracefully
-6. WHEN no options match my filter input THEN the system SHALL display "No matches found" message
+6. WHEN no options match my filter input THEN fzf SHALL display its standard "No matches found" behavior
 7. WHEN the list is empty THEN the system SHALL display "No options available" message
+8. WHEN fzf is not available on the system THEN the system SHALL fall back to a simple numbered list selection
 
 ### Requirement 3
 

@@ -33,29 +33,59 @@ graph TD
     B -->|Not Authenticated| C[Display "Not authenticated" message]
     C --> D[Auto-trigger aws-login flow]
     D --> E[AWS SSO Device Flow]
-    E --> F[Store credentials]
-    F --> G[Continue to context selection]
-    B -->|Authenticated| G
-    G --> H[Interactive Fuzzy Finder]
-    H --> I[Update default profile]
+    E --> F[Auto-open browser]
+    F --> G[Poll for completion]
+    G --> H{Authorization Complete?}
+    H -->|No| I[Wait and retry]
+    I --> G
+    H -->|Yes| J[Store credentials]
+    J --> K[Continue to context selection]
+    B -->|Authenticated| K
+    K --> L[fzf-based Fuzzy Finder]
+    L --> M[Update default profile]
 ```
 
-### Interactive Fuzzy Finder Architecture
+### fzf-based Fuzzy Finder Architecture
 
 ```mermaid
 graph TD
-    A[Initialize Finder] --> B[Display Options]
-    B --> C[Wait for Input]
-    C --> D{Input Type}
-    D -->|Keyboard Navigation| E[Update Selection]
-    D -->|Filter Text| F[Filter Options]
-    D -->|Enter Key| G[Select Current Item]
-    D -->|Escape/Ctrl+C| H[Cancel Selection]
-    E --> B
-    F --> I[Update Display]
-    I --> C
-    G --> J[Return Selected Value]
-    H --> K[Return Error/Cancel]
+    A[Initialize fzf Finder] --> B{Check fzf availability}
+    B -->|Available| C[Prepare fzf input]
+    B -->|Not Available| D[Fallback to simple selection]
+    C --> E[Spawn fzf process]
+    E --> F[Send options to fzf stdin]
+    F --> G[Wait for fzf output]
+    G --> H{User Selection}
+    H -->|Selected| I[Return selected value]
+    H -->|Cancelled| J[Return cancellation error]
+    D --> K[Display numbered list]
+    K --> L[Get user input]
+    L --> M[Return selected value]
+```
+
+### Browser Opening Architecture
+
+```mermaid
+graph TD
+    A[Start AWS SSO Flow] --> B[Get device authorization]
+    B --> C[Detect OS platform]
+    C --> D{Platform Type}
+    D -->|macOS| E[Use 'open' command]
+    D -->|Linux| F[Use 'xdg-open' command]
+    D -->|Windows| G[Use 'start' command]
+    E --> H[Launch browser]
+    F --> H
+    G --> H
+    H --> I{Browser opened?}
+    I -->|Success| J[Start polling for completion]
+    I -->|Failed| K[Display URL manually]
+    J --> L[Poll AWS for authorization]
+    L --> M{Authorized?}
+    M -->|No| N[Wait and retry]
+    M -->|Yes| O[Complete authentication]
+    N --> L
+    K --> P[Wait for manual completion]
+    P --> O
 ```
 
 ## Components and Interfaces
@@ -69,7 +99,7 @@ type AuthManager interface {
     // IsAuthenticated checks if user has valid AWS SSO credentials
     IsAuthenticated(ctx context.Context) (bool, error)
     
-    // Authenticate performs AWS SSO device flow authentication
+    // Authenticate performs AWS SSO device flow authentication with automatic browser opening
     Authenticate(ctx context.Context, config *config.Config) (*SSOSession, error)
     
     // GetStoredCredentials retrieves cached authentication credentials
@@ -85,38 +115,41 @@ type SSOSession struct {
     Region      string
     ExpiresAt   time.Time
 }
+
+// BrowserOpener handles opening URLs in the default browser
+type BrowserOpener interface {
+    Open(url string) error
+}
 ```
 
-### 2. Enhanced Fuzzy Finder
+### 2. fzf-based Fuzzy Finder
 
-**Location:** `pkg/fuzzy/interactive.go`
+**Location:** `pkg/fuzzy/fzf.go`
 
 ```go
-type InteractiveFinder interface {
+type FzfFinder interface {
     // SetOptions sets the available options for selection
     SetOptions(options []Option) error
     
     // SetPrompt sets the display prompt
     SetPrompt(prompt string)
     
-    // Select starts the interactive selection process
+    // Select starts the fzf selection process
     Select() (string, error)
     
-    // SetKeyBindings allows customization of key bindings
-    SetKeyBindings(bindings KeyBindings)
-}
-
-type KeyBindings struct {
-    Up     []string // Default: ["↑", "k"]
-    Down   []string // Default: ["↓", "j"]
-    Select []string // Default: ["Enter"]
-    Cancel []string // Default: ["Escape", "Ctrl+C"]
+    // SetPreviewCommand sets a preview command for fzf
+    SetPreviewCommand(cmd string)
 }
 
 type Option struct {
     Value       string
     Description string
     Metadata    map[string]string
+}
+
+// BrowserOpener handles opening URLs in the default browser
+type BrowserOpener interface {
+    Open(url string) error
 }
 ```
 
@@ -125,11 +158,15 @@ type Option struct {
 **Location:** `internal/cmd/aws_login.go` and `internal/cmd/aws_ctx.go`
 
 ```go
-// AWS Login Command Handler
+// AWS Login Command Handler with automatic browser opening
 func runAWSLogin(cmd *cobra.Command, args []string) error
 
-// AWS Context Command Handler  
+// AWS Context Command Handler with optional --no-auth flag
 func runAWSCtx(cmd *cobra.Command, args []string) error
+
+// Browser opener for cross-platform URL opening
+type BrowserOpener struct{}
+func (b *BrowserOpener) Open(url string) error
 ```
 
 ## Data Models
@@ -266,28 +303,35 @@ type FinderState struct {
 
 ## Implementation Phases
 
-### Phase 1: Authentication Manager
-- Extract authentication logic from aws_config.go
-- Implement credential storage and validation
-- Add session expiry detection
-- Create unit tests for authentication manager
+### Phase 1: Authentication Manager (Completed)
+- Extract authentication logic from aws_config.go ✓
+- Implement credential storage and validation ✓
+- Add session expiry detection ✓
+- Create unit tests for authentication manager ✓
 
-### Phase 2: Interactive Fuzzy Finder
-- Implement terminal-based interactive interface
-- Add real-time filtering capabilities
-- Implement keyboard navigation
-- Add graceful fallback for unsupported terminals
+### Phase 2: Interactive Fuzzy Finder (Completed - needs fzf replacement)
+- Implement terminal-based interactive interface ✓
+- Add real-time filtering capabilities ✓
+- Implement keyboard navigation ✓
+- Add graceful fallback for unsupported terminals ✓
 
-### Phase 3: Command Restructuring
-- Create aws-login command
-- Rename config command to aws-ctx
-- Implement auto-authentication in aws-ctx
-- Update help text and documentation
+### Phase 3: Command Restructuring (Completed)
+- Create aws-login command ✓
+- Rename config command to aws-ctx ✓
+- Implement auto-authentication in aws-ctx ✓
+- Update help text and documentation ✓
 
-### Phase 4: Integration and Testing
+### Phase 4: Browser Integration and fzf Enhancement (New)
+- Implement automatic browser opening for AWS SSO
+- Add polling mechanism for authorization completion
+- Replace custom fuzzy finder with fzf library integration
+- Add --no-auth flag to aws-ctx command
+- Cross-platform browser opening support
+
+### Phase 5: Integration and Testing
 - Integrate all components
 - Add comprehensive error handling
-- Implement integration tests
+- Implement integration tests for new features
 - Performance optimization and testing
 
 ## Security Considerations

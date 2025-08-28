@@ -156,8 +156,8 @@ func displayContexts(contexts []KubeContextInfo) error {
 }
 
 func selectContextWithFuzzyFinder(contexts []KubeContextInfo) (string, error) {
-	// Create interactive fuzzy finder with consistent key bindings
-	finder := fuzzy.NewInteractiveWithConsistentBindings("🔍 Select Kubernetes context:")
+	// Create fzf-based fuzzy finder
+	finder := fuzzy.NewFzf("🔍 Select Kubernetes context:")
 
 	// Build options with consistent metadata
 	var options []fuzzy.Option

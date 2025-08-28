@@ -23,10 +23,14 @@ const (
 	ErrorTypeDNSResolution       ErrorType = "dns_resolution"
 
 	// Authentication-related errors
-	ErrorTypeSessionExpired      ErrorType = "session_expired"
-	ErrorTypeInvalidCredentials  ErrorType = "invalid_credentials"
-	ErrorTypeAuthorizationFailed ErrorType = "authorization_failed"
-	ErrorTypeDeviceCodeExpired   ErrorType = "device_code_expired"
+	ErrorTypeSessionExpired       ErrorType = "session_expired"
+	ErrorTypeInvalidCredentials   ErrorType = "invalid_credentials"
+	ErrorTypeAuthorizationFailed  ErrorType = "authorization_failed"
+	ErrorTypeDeviceCodeExpired    ErrorType = "device_code_expired"
+	ErrorTypeAuthorizationPending ErrorType = "authorization_pending"
+	ErrorTypeSlowDown             ErrorType = "slow_down"
+	ErrorTypeExpiredToken         ErrorType = "expired_token"
+	ErrorTypeAccessDenied         ErrorType = "access_denied"
 
 	// Configuration-related errors
 	ErrorTypeInvalidConfig   ErrorType = "invalid_config"
@@ -66,7 +70,7 @@ func (e *Error) Unwrap() error {
 // IsRetryable returns true if the error is retryable
 func (e *Error) IsRetryable() bool {
 	switch e.Type {
-	case ErrorTypeNetworkTimeout, ErrorTypeNetworkConnectivity, ErrorTypeRateLimited, ErrorTypeServiceUnavailable:
+	case ErrorTypeNetworkTimeout, ErrorTypeNetworkConnectivity, ErrorTypeRateLimited, ErrorTypeServiceUnavailable, ErrorTypeAuthorizationPending, ErrorTypeSlowDown:
 		return true
 	default:
 		return false
@@ -284,9 +288,32 @@ func classifyAWSError(err error) *Error {
 			},
 		}
 
+	case "AuthorizationPendingException":
+		return &Error{
+			Type:          ErrorTypeAuthorizationPending,
+			Message:       "Authorization is still pending - waiting for user to complete browser authorization",
+			OriginalError: err,
+			TroubleshootingSteps: []string{
+				"Complete the authorization in your browser",
+				"Check if the browser opened correctly",
+				"Manually visit the authorization URL if needed",
+			},
+		}
+
+	case "SlowDownException":
+		return &Error{
+			Type:          ErrorTypeSlowDown,
+			Message:       "Polling too frequently - slowing down requests",
+			OriginalError: err,
+			TroubleshootingSteps: []string{
+				"The system will automatically adjust polling frequency",
+				"Please wait for the authorization to complete",
+			},
+		}
+
 	case "AccessDeniedException":
 		return &Error{
-			Type:          ErrorTypeAuthorizationFailed,
+			Type:          ErrorTypeAccessDenied,
 			Message:       "Access denied - insufficient permissions for AWS SSO",
 			OriginalError: err,
 			TroubleshootingSteps: []string{

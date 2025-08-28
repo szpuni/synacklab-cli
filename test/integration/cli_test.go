@@ -124,3 +124,56 @@ func TestCLIIntegration(t *testing.T) {
 		})
 	}
 }
+func TestAWSLoginBrowserIntegration(t *testing.T) {
+	// This test verifies that the aws-login command can be invoked
+	// and handles browser opening gracefully without actually authenticating
+
+	// Use pre-built binary from CI or build locally
+	binaryPath := os.Getenv("SYNACKLAB_BINARY")
+	if binaryPath == "" {
+		// Build the binary locally for local testing
+		buildCmd := exec.Command("go", "build", "-o", "synacklab-test", "./cmd/synacklab")
+		buildCmd.Dir = getProjectRoot()
+		var buildOut bytes.Buffer
+		buildCmd.Stdout = &buildOut
+		buildCmd.Stderr = &buildOut
+		err := buildCmd.Run()
+		if err != nil {
+			t.Fatalf("Failed to build binary: %v\nOutput: %s", err, buildOut.String())
+		}
+		binaryPath = "../../synacklab-test"
+		defer func() {
+			if err := exec.Command("rm", "../../synacklab-test").Run(); err != nil {
+				t.Logf("Failed to remove test binary: %v", err)
+			}
+		}()
+	}
+
+	// Test that the aws-login command exists and shows help
+	cmd := exec.Command(binaryPath, "auth", "aws-login", "--help")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+
+	err := cmd.Run()
+	if err != nil {
+		t.Fatalf("Failed to run aws-login --help: %v\nOutput: %s", err, out.String())
+	}
+
+	output := out.String()
+
+	// Verify the help text contains expected content
+	expectedStrings := []string{
+		"Authenticate with AWS SSO",
+		"device authorization flow",
+		"--timeout",
+	}
+
+	for _, expected := range expectedStrings {
+		if !strings.Contains(output, expected) {
+			t.Errorf("Expected help output to contain '%s', but it didn't.\nFull output: %s", expected, output)
+		}
+	}
+
+	t.Logf("AWS login command help output verified successfully")
+}

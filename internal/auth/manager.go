@@ -45,6 +45,7 @@ type SSOSession struct {
 // DefaultManager implements the Manager interface
 type DefaultManager struct {
 	credentialsPath string
+	browserOpener   BrowserOpener
 }
 
 // NewManager creates a new authentication manager instance
@@ -58,6 +59,22 @@ func NewManager() (*DefaultManager, error) {
 
 	return &DefaultManager{
 		credentialsPath: credentialsPath,
+		browserOpener:   NewBrowserOpener(),
+	}, nil
+}
+
+// NewManagerWithBrowserOpener creates a new authentication manager with a custom browser opener
+func NewManagerWithBrowserOpener(browserOpener BrowserOpener) (*DefaultManager, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	credentialsPath := filepath.Join(homeDir, ".synacklab", "aws_credentials.json")
+
+	return &DefaultManager{
+		credentialsPath: credentialsPath,
+		browserOpener:   browserOpener,
 	}, nil
 }
 
@@ -141,15 +158,39 @@ func (m *DefaultManager) Authenticate(ctx context.Context, appConfig *config.Con
 		return nil, ClassifyError(fmt.Errorf("failed to start device authorization: %w", err))
 	}
 
-	fmt.Printf("\n🌐 Please visit: %s\n", *deviceAuthResp.VerificationUriComplete)
-	fmt.Printf("📋 And enter code: %s\n", *deviceAuthResp.UserCode)
-	fmt.Println("\nPress Enter after completing the authorization...")
-	_, _ = fmt.Scanln() // Wait for user input
+	// Check for nil pointers from AWS response
+	if deviceAuthResp.VerificationUriComplete == nil || deviceAuthResp.UserCode == nil {
+		return nil, ClassifyError(fmt.Errorf("invalid device authorization response from AWS"))
+	}
 
-	// Create token with retry logic for common transient errors
+	fmt.Printf("\n🌐 Opening browser for authorization: %s\n", *deviceAuthResp.VerificationUriComplete)
+	fmt.Printf("📋 Verification code: %s\n", *deviceAuthResp.UserCode)
+
+	// Try to open browser automatically
+	browserOpened := false
+	if err := m.browserOpener.Open(*deviceAuthResp.VerificationUriComplete); err != nil {
+		fmt.Printf("⚠️  Failed to open browser automatically: %v\n", err)
+		fmt.Printf("🌐 Please manually visit: %s\n", *deviceAuthResp.VerificationUriComplete)
+	} else {
+		fmt.Println("✅ Browser opened automatically")
+		browserOpened = true
+	}
+
+	fmt.Println("\n⏳ Waiting for authorization completion...")
+
+	// Poll for token with exponential backoff
 	var tokenResp *ssooidc.CreateTokenOutput
-	maxRetries := 3
-	for attempt := 1; attempt <= maxRetries; attempt++ {
+	pollInterval := 5 * time.Second
+	maxPollInterval := 30 * time.Second
+	pollTimeout := time.Now().Add(10 * time.Minute) // 10 minute timeout for polling
+
+	for time.Now().Before(pollTimeout) {
+		select {
+		case <-ctx.Done():
+			return nil, ClassifyError(fmt.Errorf("authentication cancelled: %w", ctx.Err()))
+		default:
+		}
+
 		tokenResp, err = ssooidcClient.CreateToken(ctx, &ssooidc.CreateTokenInput{
 			ClientId:     registerResp.ClientId,
 			ClientSecret: registerResp.ClientSecret,
@@ -158,18 +199,56 @@ func (m *DefaultManager) Authenticate(ctx context.Context, appConfig *config.Con
 		})
 
 		if err == nil {
+			fmt.Println("✅ Authorization completed successfully!")
 			break
 		}
 
-		// Classify the error to determine if we should retry
+		// Classify the error to determine if we should continue polling
 		authErr := ClassifyError(err)
-		if authErr != nil && authErr.IsRetryable() && attempt < maxRetries {
-			fmt.Printf("⚠️  Authentication attempt %d failed, retrying in %v...\n", attempt, *authErr.RetryAfter)
-			time.Sleep(*authErr.RetryAfter)
-			continue
+		if authErr != nil {
+			// For authorization pending, continue polling
+			if authErr.Type == ErrorTypeAuthorizationPending {
+				fmt.Print(".")
+				time.Sleep(pollInterval)
+
+				// Increase poll interval up to maximum
+				if pollInterval < maxPollInterval {
+					pollInterval = time.Duration(float64(pollInterval) * 1.2)
+					if pollInterval > maxPollInterval {
+						pollInterval = maxPollInterval
+					}
+				}
+				continue
+			}
+
+			// For slow down errors, increase the poll interval
+			if authErr.Type == ErrorTypeSlowDown {
+				fmt.Print("⏳")
+				pollInterval = pollInterval * 2
+				if pollInterval > maxPollInterval {
+					pollInterval = maxPollInterval
+				}
+				time.Sleep(pollInterval)
+				continue
+			}
+
+			// For expired token or other terminal errors, stop polling
+			if authErr.Type == ErrorTypeExpiredToken || authErr.Type == ErrorTypeAccessDenied {
+				return nil, authErr
+			}
 		}
 
-		return nil, ClassifyError(fmt.Errorf("failed to create token: %w", err))
+		// For unknown errors, provide fallback instructions
+		if !browserOpened {
+			fmt.Printf("\n⚠️  Polling failed: %v\n", err)
+			fmt.Printf("🌐 Please ensure you've completed authorization at: %s\n", *deviceAuthResp.VerificationUriComplete)
+		}
+
+		time.Sleep(pollInterval)
+	}
+
+	if tokenResp == nil {
+		return nil, ClassifyError(fmt.Errorf("authentication timed out after 10 minutes"))
 	}
 
 	// Calculate expiry time (AWS SSO tokens typically expire in 8 hours)
