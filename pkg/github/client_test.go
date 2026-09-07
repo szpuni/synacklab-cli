@@ -764,6 +764,9 @@ func TestBuildProtectionRequest(t *testing.T) {
 			},
 			expected: &github.ProtectionRequest{
 				EnforceAdmins: true,
+				Restrictions: &github.BranchRestrictionsRequest{
+					Users: []string{},
+				},
 			},
 		},
 		{
@@ -778,6 +781,9 @@ func TestBuildProtectionRequest(t *testing.T) {
 				RequiredStatusChecks: &github.RequiredStatusChecks{
 					Strict:   true,
 					Contexts: &[]string{"ci/test", "ci/build"},
+				},
+				Restrictions: &github.BranchRestrictionsRequest{
+					Users: []string{},
 				},
 			},
 		},
@@ -795,6 +801,22 @@ func TestBuildProtectionRequest(t *testing.T) {
 					RequiredApprovingReviewCount: 2,
 					DismissStaleReviews:          true,
 					RequireCodeOwnerReviews:      false,
+				},
+				Restrictions: &github.BranchRestrictionsRequest{
+					Users: []string{},
+				},
+			},
+		},
+		{
+			name: "enforce admins explicitly disabled",
+			rules: BranchProtectionRule{
+				Pattern:       "main",
+				EnforceAdmins: github.Bool(false),
+			},
+			expected: &github.ProtectionRequest{
+				EnforceAdmins: false,
+				Restrictions: &github.BranchRestrictionsRequest{
+					Users: []string{},
 				},
 			},
 		},
@@ -881,19 +903,12 @@ func TestBuildProtectionRequest(t *testing.T) {
 				}
 			}
 
-			// Check restrictions
-			if tt.expected.Restrictions == nil {
-				if result.Restrictions != nil {
-					t.Error("Expected Restrictions to be nil")
-				}
-			} else {
-				if result.Restrictions == nil {
-					t.Error("Expected Restrictions to be set")
-				} else {
-					if len(result.Restrictions.Users) != len(tt.expected.Restrictions.Users) {
-						t.Errorf("Expected %d restricted users, got %d", len(tt.expected.Restrictions.Users), len(result.Restrictions.Users))
-					}
-				}
+			// Check restrictions - always sent (even empty) so config can clear
+			// previously-set push restrictions on apply.
+			if result.Restrictions == nil {
+				t.Error("Expected Restrictions to always be set")
+			} else if len(result.Restrictions.Users) != len(tt.expected.Restrictions.Users) {
+				t.Errorf("Expected %d restricted users, got %d", len(tt.expected.Restrictions.Users), len(result.Restrictions.Users))
 			}
 		})
 	}

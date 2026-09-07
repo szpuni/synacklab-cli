@@ -92,6 +92,7 @@ func (r *reconciler) Plan(config RepositoryConfig) (*ReconciliationPlan, error) 
 					DismissStaleReviews:    rule.DismissStaleReviews,
 					RequireCodeOwnerReview: rule.RequireCodeOwnerReview,
 					RestrictPushes:         rule.RestrictPushes,
+					EnforceAdmins:          rule.EnforceAdminsEnabled(),
 				},
 			})
 		}
@@ -280,6 +281,7 @@ func (r *reconciler) planBranchProtectionChanges(config RepositoryConfig) ([]Bra
 					DismissStaleReviews:    rule.DismissStaleReviews,
 					RequireCodeOwnerReview: rule.RequireCodeOwnerReview,
 					RestrictPushes:         rule.RestrictPushes,
+					EnforceAdmins:          rule.EnforceAdminsEnabled(),
 				},
 			})
 		} else {
@@ -292,6 +294,7 @@ func (r *reconciler) planBranchProtectionChanges(config RepositoryConfig) ([]Bra
 				DismissStaleReviews:    rule.DismissStaleReviews,
 				RequireCodeOwnerReview: rule.RequireCodeOwnerReview,
 				RestrictPushes:         rule.RestrictPushes,
+				EnforceAdmins:          rule.EnforceAdminsEnabled(),
 			}
 
 			if !r.branchProtectionsEqual(current, desired) {
@@ -513,6 +516,7 @@ func (r *reconciler) applyBranchRuleChange(change BranchRuleChange) error {
 			DismissStaleReviews:    change.After.DismissStaleReviews,
 			RequireCodeOwnerReview: change.After.RequireCodeOwnerReview,
 			RestrictPushes:         change.After.RestrictPushes,
+			EnforceAdmins:          &change.After.EnforceAdmins,
 		}
 		return r.client.CreateBranchProtection(r.owner, r.repoName, change.Branch, rule)
 	case ChangeTypeUpdate:
@@ -524,6 +528,7 @@ func (r *reconciler) applyBranchRuleChange(change BranchRuleChange) error {
 			DismissStaleReviews:    change.After.DismissStaleReviews,
 			RequireCodeOwnerReview: change.After.RequireCodeOwnerReview,
 			RestrictPushes:         change.After.RestrictPushes,
+			EnforceAdmins:          &change.After.EnforceAdmins,
 		}
 		return r.client.UpdateBranchProtection(r.owner, r.repoName, change.Branch, rule)
 	case ChangeTypeDelete:
@@ -597,6 +602,7 @@ func (r *reconciler) branchProtectionsEqual(a, b *BranchProtection) bool {
 		a.RequiredReviews == b.RequiredReviews &&
 		a.DismissStaleReviews == b.DismissStaleReviews &&
 		a.RequireCodeOwnerReview == b.RequireCodeOwnerReview &&
+		a.EnforceAdmins == b.EnforceAdmins &&
 		r.stringSlicesEqual(a.RestrictPushes, b.RestrictPushes)
 }
 

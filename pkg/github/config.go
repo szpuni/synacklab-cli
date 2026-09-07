@@ -32,6 +32,16 @@ type BranchProtectionRule struct {
 	DismissStaleReviews    bool     `yaml:"dismiss_stale_reviews"`
 	RequireCodeOwnerReview bool     `yaml:"require_code_owner_review"`
 	RestrictPushes         []string `yaml:"restrict_pushes,omitempty"`
+	// EnforceAdmins controls whether branch protection rules also apply to repository
+	// admins. A pointer so an omitted value can default to true (the historical,
+	// always-on behavior) while an explicit `enforce_admins: false` can opt out.
+	EnforceAdmins *bool `yaml:"enforce_admins,omitempty"`
+}
+
+// EnforceAdminsEnabled resolves the effective EnforceAdmins setting, defaulting to
+// true when unset so existing configs keep their current (enforced) behavior.
+func (r BranchProtectionRule) EnforceAdminsEnabled() bool {
+	return r.EnforceAdmins == nil || *r.EnforceAdmins
 }
 
 // Validate validates the repository configuration

@@ -32,6 +32,7 @@ type BranchProtection struct {
 	DismissStaleReviews    bool     `json:"dismiss_stale_reviews"`
 	RequireCodeOwnerReview bool     `json:"require_code_owner_review"`
 	RestrictPushes         []string `json:"restrict_pushes"`
+	EnforceAdmins          bool     `json:"enforce_admins"`
 }
 
 // Collaborator represents a repository collaborator

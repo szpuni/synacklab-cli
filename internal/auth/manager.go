@@ -82,8 +82,12 @@ func NewManagerWithBrowserOpener(browserOpener BrowserOpener) (*DefaultManager, 
 func (m *DefaultManager) IsAuthenticated(ctx context.Context) (bool, error) {
 	session, err := m.GetStoredCredentials()
 	if err != nil {
-		// Check if it's a file system error that should be reported
-		if authErr := ClassifyError(err); authErr != nil && authErr.Type == ErrorTypePermissionDenied {
+		// Surface real filesystem errors (permission denied, disk issues, etc.) instead
+		// of reporting "not authenticated" — those are two different failure modes and
+		// the caller needs to know which one happened. A missing credentials file or
+		// corrupted/invalid stored credentials are the only benign "not authenticated" cases.
+		if authErr := ClassifyError(err); authErr != nil &&
+			(authErr.Type == ErrorTypePermissionDenied || authErr.Type == ErrorTypeCredentialsAccess) {
 			return false, authErr
 		}
 		return false, nil // No stored credentials or benign error reading them

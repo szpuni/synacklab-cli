@@ -142,126 +142,8 @@ func displayPlan(plan *github.ReconciliationPlan, owner, repoName string, isDryR
 		fmt.Printf("\n📋 Planned changes for %s/%s:\n", owner, repoName)
 	}
 
-	changeCount := 0
-	destructiveChanges := 0
-
-	// Repository changes
-	if plan.Repository != nil {
-		changeCount++
-		switch plan.Repository.Type {
-		case github.ChangeTypeCreate:
-			fmt.Printf("  + Repository: CREATE new repository\n")
-			fmt.Printf("    - Name: %s\n", plan.Repository.After.Name)
-			fmt.Printf("    - Description: %s\n", plan.Repository.After.Description)
-			fmt.Printf("    - Private: %t\n", plan.Repository.After.Private)
-			if len(plan.Repository.After.Topics) > 0 {
-				fmt.Printf("    - Topics: %s\n", strings.Join(plan.Repository.After.Topics, ", "))
-			}
-		case github.ChangeTypeUpdate:
-			fmt.Printf("  ~ Repository: UPDATE repository settings\n")
-			if plan.Repository.Before.Description != plan.Repository.After.Description {
-				fmt.Printf("    ~ Description: %q → %q\n", plan.Repository.Before.Description, plan.Repository.After.Description)
-			}
-			if plan.Repository.Before.Private != plan.Repository.After.Private {
-				// Highlight making repository public as potentially destructive
-				if plan.Repository.Before.Private && !plan.Repository.After.Private {
-					fmt.Printf("    ⚠️  Private: %t → %t (MAKING REPOSITORY PUBLIC)\n", plan.Repository.Before.Private, plan.Repository.After.Private)
-					destructiveChanges++
-				} else {
-					fmt.Printf("    ~ Private: %t → %t\n", plan.Repository.Before.Private, plan.Repository.After.Private)
-				}
-			}
-			if !stringSlicesEqual(plan.Repository.Before.Topics, plan.Repository.After.Topics) {
-				fmt.Printf("    ~ Topics: [%s] → [%s]\n",
-					strings.Join(plan.Repository.Before.Topics, ", "),
-					strings.Join(plan.Repository.After.Topics, ", "))
-			}
-		}
-	}
-
-	// Branch protection changes
-	for _, change := range plan.BranchRules {
-		changeCount++
-		switch change.Type {
-		case github.ChangeTypeCreate:
-			fmt.Printf("  + Branch Protection: CREATE rule for %s\n", change.Branch)
-			displayBranchProtectionDetails(change.After, "    ")
-		case github.ChangeTypeUpdate:
-			fmt.Printf("  ~ Branch Protection: UPDATE rule for %s\n", change.Branch)
-			destructiveChanges += displayBranchProtectionChanges(change.Before, change.After, "    ")
-		case github.ChangeTypeDelete:
-			fmt.Printf("  ⚠️  Branch Protection: DELETE rule for %s (REMOVING PROTECTION)\n", change.Branch)
-			destructiveChanges++
-		}
-	}
-
-	// Collaborator changes
-	for _, change := range plan.Collaborators {
-		changeCount++
-		switch change.Type {
-		case github.ChangeTypeCreate:
-			fmt.Printf("  + Collaborator: ADD %s with %s permission\n", change.After.Username, change.After.Permission)
-		case github.ChangeTypeUpdate:
-			// Highlight permission downgrades as potentially destructive
-			if isPermissionDowngrade(change.Before.Permission, change.After.Permission) {
-				fmt.Printf("  ⚠️  Collaborator: UPDATE %s permission %s → %s (REDUCING ACCESS)\n",
-					change.After.Username, change.Before.Permission, change.After.Permission)
-				destructiveChanges++
-			} else {
-				fmt.Printf("  ~ Collaborator: UPDATE %s permission %s → %s\n",
-					change.After.Username, change.Before.Permission, change.After.Permission)
-			}
-		case github.ChangeTypeDelete:
-			fmt.Printf("  ⚠️  Collaborator: REMOVE %s (REMOVING ACCESS)\n", change.Before.Username)
-			destructiveChanges++
-		}
-	}
-
-	// Team changes
-	for _, change := range plan.Teams {
-		changeCount++
-		switch change.Type {
-		case github.ChangeTypeCreate:
-			fmt.Printf("  + Team: ADD %s with %s permission\n", change.After.TeamSlug, change.After.Permission)
-		case github.ChangeTypeUpdate:
-			// Highlight permission downgrades as potentially destructive
-			if isPermissionDowngrade(change.Before.Permission, change.After.Permission) {
-				fmt.Printf("  ⚠️  Team: UPDATE %s permission %s → %s (REDUCING ACCESS)\n",
-					change.After.TeamSlug, change.Before.Permission, change.After.Permission)
-				destructiveChanges++
-			} else {
-				fmt.Printf("  ~ Team: UPDATE %s permission %s → %s\n",
-					change.After.TeamSlug, change.Before.Permission, change.After.Permission)
-			}
-		case github.ChangeTypeDelete:
-			fmt.Printf("  ⚠️  Team: REMOVE %s (REMOVING ACCESS)\n", change.Before.TeamSlug)
-			destructiveChanges++
-		}
-	}
-
-	// Webhook changes
-	for _, change := range plan.Webhooks {
-		changeCount++
-		switch change.Type {
-		case github.ChangeTypeCreate:
-			fmt.Printf("  + Webhook: CREATE %s\n", change.After.URL)
-			fmt.Printf("    - Events: %s\n", strings.Join(change.After.Events, ", "))
-			fmt.Printf("    - Active: %t\n", change.After.Active)
-		case github.ChangeTypeUpdate:
-			fmt.Printf("  ~ Webhook: UPDATE %s\n", change.After.URL)
-			if !stringSlicesEqual(change.Before.Events, change.After.Events) {
-				fmt.Printf("    ~ Events: [%s] → [%s]\n",
-					strings.Join(change.Before.Events, ", "),
-					strings.Join(change.After.Events, ", "))
-			}
-			if change.Before.Active != change.After.Active {
-				fmt.Printf("    ~ Active: %t → %t\n", change.Before.Active, change.After.Active)
-			}
-		case github.ChangeTypeDelete:
-			fmt.Printf("  ⚠️  Webhook: DELETE %s (REMOVING WEBHOOK)\n", change.Before.URL)
-			destructiveChanges++
-		}
-	}
+	changeCount := countPlanChanges(plan)
+	destructiveChanges := displayRepositoryPlanChanges(plan, "  ")
 
 	if changeCount == 0 {
 		fmt.Printf("  No changes needed - repository is up to date\n")
@@ -300,6 +182,9 @@ func displayBranchProtectionDetails(bp *github.BranchProtection, indent string) 
 	}
 	if len(bp.RestrictPushes) > 0 {
 		fmt.Printf("%s- Restrict pushes to: %s\n", indent, strings.Join(bp.RestrictPushes, ", "))
+	}
+	if bp.EnforceAdmins {
+		fmt.Printf("%s- Enforce for admins: enabled\n", indent)
 	}
 }
 
@@ -361,6 +246,14 @@ func displayBranchProtectionChanges(before, after *github.BranchProtection, inde
 			fmt.Printf("%s~ Restrict pushes: [%s] → [%s]\n", indent,
 				strings.Join(before.RestrictPushes, ", "),
 				strings.Join(after.RestrictPushes, ", "))
+		}
+	}
+	if before.EnforceAdmins != after.EnforceAdmins {
+		if before.EnforceAdmins && !after.EnforceAdmins {
+			fmt.Printf("%s⚠️  Enforce for admins: %t → %t (REDUCING PROTECTION)\n", indent, before.EnforceAdmins, after.EnforceAdmins)
+			destructiveChanges++
+		} else {
+			fmt.Printf("%s~ Enforce for admins: %t → %t\n", indent, before.EnforceAdmins, after.EnforceAdmins)
 		}
 	}
 

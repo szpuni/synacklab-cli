@@ -168,7 +168,7 @@ func (c *Client) DeleteBranchProtection(owner, name, branch string) error {
 // buildProtectionRequest builds a GitHub API ProtectionRequest from our BranchProtectionRule
 func (c *Client) buildProtectionRequest(rules BranchProtectionRule) *github.ProtectionRequest {
 	protection := &github.ProtectionRequest{
-		EnforceAdmins: true,
+		EnforceAdmins: rules.EnforceAdminsEnabled(),
 	}
 
 	// Set required status checks if specified
@@ -188,11 +188,16 @@ func (c *Client) buildProtectionRequest(rules BranchProtectionRule) *github.Prot
 		}
 	}
 
-	// Set push restrictions if specified
-	if len(rules.RestrictPushes) > 0 {
-		protection.Restrictions = &github.BranchRestrictionsRequest{
-			Users: rules.RestrictPushes,
-		}
+	// Push restrictions are always sent (even when empty) so that clearing
+	// RestrictPushes in config actually clears it on GitHub — omitting Restrictions
+	// entirely leaves whatever restriction already exists on the branch untouched.
+	users := rules.RestrictPushes
+	if users == nil {
+		users = []string{}
+	}
+	protection.Restrictions = &github.BranchRestrictionsRequest{
+		Users: users,
+		Teams: []string{},
 	}
 
 	return protection
@@ -475,6 +480,10 @@ func (c *Client) convertGitHubBranchProtection(protection *github.Protection, br
 		for _, user := range protection.Restrictions.Users {
 			bp.RestrictPushes = append(bp.RestrictPushes, user.GetLogin())
 		}
+	}
+
+	if protection.EnforceAdmins != nil {
+		bp.EnforceAdmins = protection.EnforceAdmins.Enabled
 	}
 
 	return bp
