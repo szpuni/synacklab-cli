@@ -27,4 +27,5 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(eksConfigCmd)
 	rootCmd.AddCommand(githubCmd)
+	rootCmd.AddCommand(runbookCmd)
 }

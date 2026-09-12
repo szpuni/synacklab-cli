@@ -19,13 +19,16 @@ var (
 )
 
 var runbookServeCmd = &cobra.Command{
-	Use:   "serve <file.md>",
+	Use:   "serve [path]",
 	Short: "Start an interactive web server for a runbook",
 	Long: `serve parses a Markdown file's fenced bash/python code blocks into an
 interactive runbook and starts a local web server. Open it in a browser to
 run each step one at a time, in order, carrying output from one step into
-a later one via input=/capture= or opt-in {{...}} templating.`,
-	Args: cobra.ExactArgs(1),
+a later one via input=/capture= or opt-in {{...}} templating.
+
+path may be a runbook file, a directory (RUNBOOK.md/runbook.md, or its
+only *.md file, is used), or omitted entirely to use the current directory.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: runServe,
 }
 
@@ -33,11 +36,20 @@ func init() {
 	runbookServeCmd.Flags().IntVar(&servePort, "port", 4747, "port to listen on")
 	runbookServeCmd.Flags().StringVar(&serveBind, "bind", "127.0.0.1", "address to bind to")
 	runbookServeCmd.Flags().StringVar(&serveCwd, "cwd", "", "working directory for step execution (default: the document's directory)")
-	rootCmd.AddCommand(runbookServeCmd)
+	runbookCmd.AddCommand(runbookServeCmd)
 }
 
 func runServe(_ *cobra.Command, args []string) error {
-	srv, docPath, err := buildRunbookServer(args[0], serveCwd)
+	pathArg := ""
+	if len(args) > 0 {
+		pathArg = args[0]
+	}
+	docPath, err := resolveRunbookPath(pathArg)
+	if err != nil {
+		return err
+	}
+
+	srv, _, err := buildRunbookServer(docPath, serveCwd)
 	if err != nil {
 		return err
 	}

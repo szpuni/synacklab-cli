@@ -11,13 +11,13 @@ This document demonstrates the runbook server's attributes: `input=`,
 match. Run it with:
 
 ```
-synacklab serve examples/runbook-demo.md
+synacklab runbook serve examples/runbook-demo.md
 ```
 
 The first three steps also run non-interactively:
 
 ```
-synacklab run examples/runbook-demo.md --non-interactive --set NAME=world
+synacklab runbook run examples/runbook-demo.md --non-interactive --set NAME=world
 ```
 
 That command exits non-zero at `confirm_before_running` — non-interactive

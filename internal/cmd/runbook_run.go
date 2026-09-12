@@ -19,30 +19,41 @@ var (
 )
 
 var runbookRunCmd = &cobra.Command{
-	Use:   "run <file.md>",
+	Use:   "run [path]",
 	Short: "Execute a runbook top to bottom without a browser (for CI)",
 	Long: `run drives the same parser and execution engine as serve, but top to
 bottom with no browser and no per-step confirmation prompt. A step that
 declares input= must have a matching --set, and a step requiring
 confirmation (confirm=true or a danger_patterns match) fails the run closed
-— run it interactively via 'synacklab serve' instead.`,
-	Args: cobra.ExactArgs(1),
+— run it interactively via 'synacklab runbook serve' instead.
+
+path may be a runbook file, a directory (RUNBOOK.md/runbook.md, or its
+only *.md file, is used), or omitted entirely to use the current directory.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: runRunbookRun,
 }
 
 func init() {
 	runbookRunCmd.Flags().BoolVar(&runNonInteractive, "non-interactive", false,
-		"execute the full document top to bottom (required — interactive execution is synacklab serve's job)")
+		"execute the full document top to bottom (required — interactive execution is synacklab runbook serve's job)")
 	runbookRunCmd.Flags().StringArrayVar(&runSetFlags, "set", nil, "VAR=value for a step's input= (repeatable)")
-	rootCmd.AddCommand(runbookRunCmd)
+	runbookCmd.AddCommand(runbookRunCmd)
 }
 
 func runRunbookRun(_ *cobra.Command, args []string) error {
 	if !runNonInteractive {
-		return fmt.Errorf("run requires --non-interactive (interactive execution is `synacklab serve`)")
+		return fmt.Errorf("run requires --non-interactive (interactive execution is synacklab runbook serve's job)")
 	}
 
-	docPath := args[0]
+	pathArg := ""
+	if len(args) > 0 {
+		pathArg = args[0]
+	}
+	docPath, err := resolveRunbookPath(pathArg)
+	if err != nil {
+		return err
+	}
+
 	source, err := os.ReadFile(docPath)
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", docPath, err)

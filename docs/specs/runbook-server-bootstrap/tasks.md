@@ -239,3 +239,50 @@
   - `make build` succeeds; `go mod tidy` leaves `go.mod`/`go.sum` unchanged
     (already tidy)
   - _Requirements: all_
+
+## Post-review follow-ups
+
+Real user feedback from trying the built binary surfaced two CLI-ergonomics
+gaps the original spec didn't cover:
+
+- [x] `make lint`/`make test` fixes
+  - `make lint` (plain `golangci-lint run`, no path scoping) was failing on
+    a pre-existing, unrelated `staticcheck` finding in
+    `internal/auth/errors.go:89` that task 18's scoped lint runs didn't
+    surface. Fixed it (one-line `fmt.Fprintf` instead of
+    `sb.WriteString(fmt.Sprintf(...))`) rather than leaving `make lint` red
+    for an unrelated reason.
+  - `make test` was already passing; confirmed unaffected.
+
+- [x] `serve`/`run`/`fmt` moved under a `runbook` command group, and their
+      path argument made optional with file/directory/cwd-default resolution
+  - Top-level `synacklab --help` was cluttered with `serve`/`run`/`fmt`
+    sitting alongside `auth`/`github`/etc. Added `internal/cmd/runbook.go`
+    (`runbookCmd`, mirroring the existing `githubCmd` group pattern exactly:
+    subcommands self-register via their own `init()`, the group registers
+    on `rootCmd` in `root.go`) and moved all three under it:
+    `synacklab runbook serve|run|fmt`.
+  - Every command required an exact file path (`accepts 1 arg(s), received
+    0`; `is a directory` when given one) — bad UX for a tool meant to be run
+    from a runbook's own directory. Added `internal/cmd/runbook_path.go`
+    (`resolveRunbookPath`, TDD'd): the path argument is now optional
+    (`cobra.MaximumNArgs(1)`) and may be a file, a directory, or omitted
+    entirely (defaults to `.`). A directory resolves to `RUNBOOK.md`, then
+    `runbook.md`, then its only `*.md` file if exactly one exists; otherwise
+    a clear, actionable error (listing the ambiguous files, or naming the
+    expected convention) instead of a crash or a raw filesystem error.
+  - `--port`/`--bind 127.0.0.1`/cwd-from-invocation-directory defaults were
+    already in place from task 13 — the actual blocker was the mandatory
+    exact-file argument, not missing defaults.
+  - Manually verified against the real binary: top-level `--help` now shows
+    a single `runbook` entry; `runbook fmt <dir-with-RUNBOOK.md>` resolves
+    and runs; a directory with two ambiguous `*.md` files and an empty
+    directory each produce the intended clear error; `runbook serve` with
+    zero arguments, run from a directory containing only `RUNBOOK.md`,
+    starts correctly and serves it (confirmed via `curl /api/doc`).
+  - Updated `docs/runbook.md` and `examples/runbook-demo.md` to the new
+    `synacklab runbook <subcommand>` invocation and the path-resolution
+    rules. `requirements.md`/`design.md` still show the original
+    `synacklab serve <file.md>`-style examples from the initial spec review
+    — left as the historical record of what was originally planned, per
+    this file's own account of what actually shipped.

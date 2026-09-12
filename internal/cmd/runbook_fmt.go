@@ -11,21 +11,32 @@ import (
 )
 
 var runbookFmtCmd = &cobra.Command{
-	Use:   "fmt <file.md>",
+	Use:   "fmt [path]",
 	Short: "Canonicalize a runbook's fence attribute formatting",
 	Long: `fmt rewrites each runnable fence's attribute string into a canonical key
 order and spacing, without altering prose, code content, or attribute
-values/semantics. On a parse error the file is left untouched.`,
-	Args: cobra.ExactArgs(1),
+values/semantics. On a parse error the file is left untouched.
+
+path may be a runbook file, a directory (RUNBOOK.md/runbook.md, or its
+only *.md file, is used), or omitted entirely to use the current directory.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: runRunbookFmt,
 }
 
 func init() {
-	rootCmd.AddCommand(runbookFmtCmd)
+	runbookCmd.AddCommand(runbookFmtCmd)
 }
 
 func runRunbookFmt(_ *cobra.Command, args []string) error {
-	docPath := args[0]
+	pathArg := ""
+	if len(args) > 0 {
+		pathArg = args[0]
+	}
+	docPath, err := resolveRunbookPath(pathArg)
+	if err != nil {
+		return err
+	}
+
 	source, err := os.ReadFile(docPath)
 	if err != nil {
 		return fmt.Errorf("failed to read %s: %w", docPath, err)

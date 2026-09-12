@@ -13,15 +13,26 @@ history) between requests, never a live shell.
 
 ## Commands
 
-### `synacklab serve <file.md> [--port 4747] [--bind 127.0.0.1] [--cwd path]`
+`serve`, `run`, and `fmt` are subcommands of `synacklab runbook` (see
+`synacklab runbook --help`). Each takes an optional `path`, which can be:
+
+- a runbook file — used directly;
+- a directory — resolved to `RUNBOOK.md` or `runbook.md` inside it, falling
+  back to that directory's only `*.md` file if neither exists;
+- omitted entirely — resolved the same way, against the current directory.
+
+A directory with no `RUNBOOK.md`/`runbook.md` and either zero or more than
+one `*.md` file is a clear, actionable error rather than a guess.
+
+### `synacklab runbook serve [path] [--port 4747] [--bind 127.0.0.1] [--cwd path]`
 
 Starts the interactive web server. Binds to `127.0.0.1` by default; passing
 `--bind` with any non-loopback address prints an explicit warning before
 starting, since v1 has no authentication — anyone who can reach the port can
 execute arbitrary commands as the local user. `--cwd` sets the session's
-initial working directory (default: the document's own directory).
+initial working directory (default: the resolved document's own directory).
 
-### `synacklab run <file.md> --non-interactive [--set VAR=value ...]`
+### `synacklab runbook run [path] --non-interactive [--set VAR=value ...]`
 
 Executes every step in the document top to bottom, using the same parser
 and execution engine as `serve`, for use in CI. `--non-interactive` is
@@ -32,7 +43,7 @@ fails the run closed, since there's no way to confirm non-interactively;
 run it via `serve` instead. The first step to fail or time out stops the
 remaining steps and exits non-zero.
 
-### `synacklab fmt <file.md>`
+### `synacklab runbook fmt [path]`
 
 Rewrites each runnable fence's attribute string into a canonical key order
 and spacing, without altering prose, code content, or attribute values. On
@@ -99,14 +110,14 @@ runnable example covering `input=`, `capture=`, `set_cwd=`, `confirm=`,
 and `danger_patterns`.
 
 ```bash
-synacklab serve examples/runbook-demo.md
+synacklab runbook serve examples/runbook-demo.md
 ```
 
 Its first three steps (`greet`, `get_ip`, `make_workdir`) also run
 non-interactively:
 
 ```bash
-synacklab run examples/runbook-demo.md --non-interactive --set NAME=world
+synacklab runbook run examples/runbook-demo.md --non-interactive --set NAME=world
 ```
 
 That command exits non-zero at the fourth step (`confirm_before_running`) —
