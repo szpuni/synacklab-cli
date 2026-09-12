@@ -159,14 +159,18 @@
     subshell and held the port for the next attempt; not a product bug.)
   - _Requirements: 13.1, 13.2, 13.3_
 
-- [ ] 14. Implement `synacklab run --non-interactive`
+- [x] 14. Implement `synacklab run --non-interactive`
   - Create `internal/cmd/runbook_run.go` reusing `pkg/runbook` parser +
     engine directly (no HTTP layer), `--set VAR=value` flags, top-to-bottom
     execution, stop-on-first-nonzero-exit, fail-closed on
     `confirm=true`/danger-pattern steps
   - Write unit tests: missing `--set` for declared `input=` fails before
     execution, non-zero step halts remaining steps, confirm/danger steps
-    fail closed, per-step logs written same as `serve`
+    fail closed, per-step logs written same as `serve` (same `Engine`/
+    `FileLogWriter` as `serve`, so this is inherited rather than re-tested)
+  - `--non-interactive` is a required flag (errors without it) rather than
+    an implicit default — v1 has no interactive terminal prompt path at all,
+    so this makes that explicit instead of silently ignoring the missing flag
   - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5_
 
 - [ ] 15. Implement `synacklab fmt`
