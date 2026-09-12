@@ -1,0 +1,138 @@
+# Implementation Plan
+
+- [x] 1. Set up `pkg/runbook` package skeleton and core types
+  - Create `pkg/runbook/types.go` with `Document`, `Block`, `Step`, `Frontmatter`
+  - Create `pkg/runbook/errors.go` with `ErrorType` consts and `*Error`
+  - `goldmark`/`gorilla/websocket` deferred to tasks 2 and 11 — `go mod tidy`
+    strips unused requires, so they're added alongside the code that imports them
+  - _Requirements: 1.1, 1.2, 1.3_
+
+- [ ] 2. Implement Markdown + fence-attribute parsing (TDD)
+  - Write table-driven tests first: all attrs present, missing attrs, duplicate
+    explicit names, malformed attribute syntax, non-bash/python fences,
+    auto-generated names, document-order preservation
+  - Implement `pkg/runbook/parser.go` (goldmark wrapper + custom fence-info
+    parser) to make the tests pass
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
+
+- [ ] 3. Implement YAML frontmatter parsing (TDD)
+  - Write tests: `default_timeout`/`danger_patterns` present, absent, partial
+  - Implement `pkg/runbook/frontmatter.go` using existing `gopkg.in/yaml.v3`
+  - _Requirements: 1.6, 1.7_
+
+- [ ] 4. Implement in-memory session store (TDD)
+  - Write tests: `SetVar` last-write-wins, `SetCwd`, `AppendHistory`, `Reset`,
+    concurrent access under `go test -race`
+  - Implement `pkg/runbook/session.go`
+  - _Requirements: 14.1, 14.2, 14.3, 14.4_
+
+- [ ] 5. Implement capture-trailer generation and parsing (TDD)
+  - Write tests: bash trailer emits `__SYNACLAB_CAP__` lines matching
+    `capture=` names, python trailer equivalent, unset var captured as empty
+    string, `__SYNACLAB_CWD__` line generation/parsing for `set_cwd=true`,
+    stripping of sentinel lines from displayed/logged output
+  - Implement `pkg/runbook/capture.go`
+  - _Requirements: 6.1, 6.2, 6.3, 7.2, 7.4_
+
+- [ ] 6. Implement template substitution (TDD)
+  - Write tests: `{{steps.x.stdout}}`/`{{steps.x.exit_code}}`/`{{vars.x}}`
+    substitution, missing-reference error (no spawn side effect), explicit
+    "no shell-escaping" assertion test
+  - Implement `pkg/runbook/template.go`
+  - _Requirements: 10.1, 10.2, 10.3_
+
+- [ ] 7. Implement danger-pattern matching and confirm gating (TDD)
+  - Write tests: pattern match/no-match, `confirm=true` always requires
+    confirmation, danger pattern forces confirmation regardless of
+    `confirm=false`
+  - Implement `pkg/runbook/danger.go`
+  - _Requirements: 8.1, 8.2, 8.4_
+
+- [ ] 8. Implement the execution engine core (TDD)
+  - Write tests using short-lived real `bash`/`python3` subprocesses: env
+    merge precedence (declared input wins over session var), `Dir` resolution
+    (step `cwd=` vs session cwd), timeout kill + process-group cleanup (no
+    orphaned children), non-timeout exit code propagation
+  - Implement `pkg/runbook/executor.go` wiring parser output + capture.go +
+    template.go + danger.go into `Engine.Run`
+  - _Requirements: 3.2, 3.3, 5.1, 5.2, 5.3, 7.1, 7.3, 9.1, 9.2, 9.3_
+
+- [ ] 9. Implement per-execution disk logging (TDD)
+  - Write tests: log file created under `.synacklab/<doc-slug>/<session-id>/steps/`
+    with correct `<n>-<name>.log` naming, contains stdout/stderr/exit
+    code/timing, written even when `capture=` is absent, written on timeout
+  - Implement `pkg/runbook/logstore.go`, wire into `Engine.Run`
+  - _Requirements: 4.1, 4.2, 4.3, 9.3_
+
+- [ ] 10. Implement REST API handlers (TDD)
+  - Write `httptest`-based table-driven tests per handler: `GET /api/doc`,
+    `GET /api/session`, `POST /api/session/reset`, `POST /api/steps/{name}/run`
+    (missing input → 400, unconfirmed danger/confirm step → 400, valid → 200 +
+    `execution_id`)
+  - Implement `pkg/runbook/api.go`
+  - _Requirements: 2.2, 5.2, 8.1, 8.2, 14.3, 14.4_
+
+- [ ] 11. Implement WebSocket execution streaming (TDD)
+  - Write tests: stdout/stderr events arrive in order, terminal `done` event
+    carries `exit_code`/`duration_ms`/`captured`, late-connecting client still
+    receives buffered events for a fast/already-finished execution
+  - Implement `pkg/runbook/ws.go`, `pkg/runbook/server.go` route wiring
+  - _Requirements: 3.4, 3.5_
+
+- [ ] 12. Build the embedded frontend SPA
+  - Implement `pkg/runbook/web/{index.html,app.js,app.css}`: render prose +
+    steps in order, Run controls, input form fields gating Run, live
+    stdout/stderr panel via the WS endpoint, session var/cwd display that
+    updates without reload, confirmation prompt showing the matched danger
+    pattern
+  - Wire `go:embed` in `pkg/runbook/server.go`
+  - Manually verify in a browser against a real fixture runbook (no automated
+    browser test in v1)
+  - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 8.3_
+
+- [ ] 13. Implement `synacklab serve` command
+  - Create `internal/cmd/runbook_serve.go`: `--port 4747`, `--bind 127.0.0.1`,
+    `--cwd path` flags; loopback-only default; explicit warning banner when
+    `--bind` is non-loopback
+  - Write unit tests for flag parsing/defaults and the bind-warning trigger
+  - _Requirements: 13.1, 13.2, 13.3_
+
+- [ ] 14. Implement `synacklab run --non-interactive`
+  - Create `internal/cmd/runbook_run.go` reusing `pkg/runbook` parser +
+    engine directly (no HTTP layer), `--set VAR=value` flags, top-to-bottom
+    execution, stop-on-first-nonzero-exit, fail-closed on
+    `confirm=true`/danger-pattern steps
+  - Write unit tests: missing `--set` for declared `input=` fails before
+    execution, non-zero step halts remaining steps, confirm/danger steps
+    fail closed, per-step logs written same as `serve`
+  - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5_
+
+- [ ] 15. Implement `synacklab fmt`
+  - Create `internal/cmd/runbook_fmt.go` and canonical-attribute-order
+    rewriting in `pkg/runbook/parser.go` (or a small `fmt.go` sibling)
+  - Write unit tests: canonical key order/spacing applied, prose/code/attr
+    values unchanged, parse error leaves file untouched
+  - _Requirements: 12.1, 12.2, 12.3_
+
+- [ ] 16. Integration tests
+  - End-to-end fixture runbook driven through `serve`'s HTTP+WS API
+    (input→capture chaining across two steps), assert final session state
+  - `run --non-interactive` fixture with `--set`, assert exit code + logs
+  - Timeout fixture (`timeout=1s` sleeping longer), assert `timed_out` +
+    no orphaned child process
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 6.4, 9.1, 9.2, 11.1–11.5_
+
+- [ ] 17. Documentation and example runbook
+  - Add a `docs/` (or README) section covering `serve`/`run`/`fmt`, the fence
+    attribute table, and an explicit security note on `{{...}}` template
+    substitution vs. `input=`/`capture=` (per project-brief.md §13)
+  - Add an example runbook `.md` fixture demonstrating input, capture,
+    set_cwd, confirm, and danger_patterns
+  - _Requirements: 10.4, 13.2_
+
+- [ ] 18. Full-suite verification
+  - `go test ./...` (including `-race` for session/executor packages)
+  - `golangci-lint run`
+  - Confirm no file in `pkg/runbook/` or `internal/cmd/` exceeds 500 lines;
+    split (e.g. `executor_bash.go`/`executor_python.go`, `api_steps.go`) if so
+  - _Requirements: all_
