@@ -1,6 +1,7 @@
 package runbook
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -116,8 +117,10 @@ func (s *Server) handlePostStepRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Detached from the request context: the run must outlive the HTTP
+	// handler, which returns as soon as it hands back the execution_id.
 	timeout := EffectiveTimeout(step, s.doc.Frontmatter.DefaultTimeout)
-	_, events, err := s.engine.Run(r.Context(), step, req.Inputs, timeout, s.store)
+	_, events, err := s.engine.Run(context.Background(), step, req.Inputs, timeout, s.store)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

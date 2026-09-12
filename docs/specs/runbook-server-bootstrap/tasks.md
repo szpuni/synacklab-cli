@@ -105,11 +105,21 @@
     dependency for something this small
   - _Requirements: 2.2, 5.2, 8.1, 8.2, 14.3, 14.4_
 
-- [ ] 11. Implement WebSocket execution streaming (TDD)
+- [x] 11. Implement WebSocket execution streaming (TDD)
   - Write tests: stdout/stderr events arrive in order, terminal `done` event
     carries `exit_code`/`duration_ms`/`captured`, late-connecting client still
-    receives buffered events for a fast/already-finished execution
-  - Implement `pkg/runbook/ws.go`, `pkg/runbook/server.go` route wiring
+    receives buffered events for a fast/already-finished execution, unknown
+    execution id → 404 on the upgrade
+  - Implement `pkg/runbook/ws.go`; reworked `executionRecord` in `server.go`
+    into a proper publish/subscribe fan-out (`subscribe`/`publish`) so a
+    late WS connection replays the buffered snapshot then keeps streaming
+    live events, atomically (no events lost or duplicated at the join point)
+  - **Bug found by this task's tests and fixed**: the run handler (task 10)
+    passed `r.Context()` into the detached `Engine.Run` goroutine — that
+    context is canceled the instant the HTTP handler returns (right after
+    the 202), which killed the process almost immediately via the
+    timeout/cancel machinery from task 8, before it could produce output.
+    Switched to `context.Background()` for the async run.
   - _Requirements: 3.4, 3.5_
 
 - [ ] 12. Build the embedded frontend SPA
