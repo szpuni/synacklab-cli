@@ -74,5 +74,6 @@ type Event struct {
 	Data     string
 	ExitCode int
 	Duration time.Duration
+	TimedOut bool
 	Captured map[string]string
 }

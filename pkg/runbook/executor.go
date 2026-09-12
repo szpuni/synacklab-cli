@@ -1,0 +1,233 @@
+package runbook
+
+import (
+	"bufio"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+)
+
+// DefaultTimeout is used when neither a step nor the document declares one.
+const DefaultTimeout = 120 * time.Second
+
+// EffectiveTimeout resolves a step's timeout per Requirement 9.1's
+// precedence: step timeout= -> document default_timeout -> DefaultTimeout.
+func EffectiveTimeout(step *Step, docDefault time.Duration) time.Duration {
+	if step.Timeout > 0 {
+		return step.Timeout
+	}
+	if docDefault > 0 {
+		return docDefault
+	}
+	return DefaultTimeout
+}
+
+// Engine runs a single Step in its own process and streams its output.
+type Engine interface {
+	Run(ctx context.Context, step *Step, inputs map[string]string, timeout time.Duration, store SessionStore) (*Execution, <-chan Event, error)
+}
+
+// ProcessEngine spawns exactly one bash/python3 process per Run call. No
+// process is kept alive between calls (Requirement 3.2).
+type ProcessEngine struct{}
+
+func NewEngine() Engine {
+	return &ProcessEngine{}
+}
+
+func (e *ProcessEngine) Run(ctx context.Context, step *Step, inputs map[string]string, timeout time.Duration, store SessionStore) (*Execution, <-chan Event, error) {
+	sess := store.Get()
+
+	src, err := Substitute(step.Source, sess)
+	if err != nil {
+		return nil, nil, err
+	}
+	wrapped := src + buildTrailer(step.Lang, step.Capture, step.SetCwd)
+
+	binary, ok := interpreterFor(step.Lang)
+	if !ok {
+		return nil, nil, &Error{Type: ErrorTypeExecution, Message: fmt.Sprintf("unsupported language %q", step.Lang)}
+	}
+
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+
+	cmd := exec.CommandContext(runCtx, binary, "-c", wrapped)
+	cmd.Dir = resolveDir(sess.Cwd, step.Cwd)
+	cmd.Env = mergeEnv(sess.Vars, inputs)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	cmd.WaitDelay = 2 * time.Second
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		cancel()
+		return nil, nil, &Error{Type: ErrorTypeExecution, Message: "failed to open stdout pipe", Cause: err}
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		cancel()
+		return nil, nil, &Error{Type: ErrorTypeExecution, Message: "failed to open stderr pipe", Cause: err}
+	}
+
+	execution := &Execution{StepName: step.Name, Started: time.Now()}
+
+	if err := cmd.Start(); err != nil {
+		cancel()
+		return nil, nil, &Error{Type: ErrorTypeExecution, Message: "failed to start process", Cause: err}
+	}
+
+	events := make(chan Event, 32)
+	go e.wait(runCtx, cancel, cmd, stdoutPipe, stderrPipe, step, store, execution, events)
+
+	return execution, events, nil
+}
+
+func (e *ProcessEngine) wait(
+	runCtx context.Context,
+	cancel context.CancelFunc,
+	cmd *exec.Cmd,
+	stdoutPipe, stderrPipe io.Reader,
+	step *Step,
+	store SessionStore,
+	execution *Execution,
+	events chan<- Event,
+) {
+	defer cancel()
+	defer close(events)
+
+	captured := map[string]string{}
+	cwd, cwdFound := "", false
+	var rawStdout strings.Builder
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		streamStdout(stdoutPipe, events, captured, &cwd, &cwdFound, &rawStdout)
+	}()
+	go func() {
+		defer wg.Done()
+		streamStderr(stderrPipe, events)
+	}()
+	wg.Wait()
+
+	waitErr := cmd.Wait()
+
+	execution.Duration = time.Since(execution.Started)
+	execution.TimedOut = errors.Is(runCtx.Err(), context.DeadlineExceeded)
+	execution.Stdout = rawStdout.String()
+	execution.Captured = captured
+	execution.ExitCode = exitCodeFrom(waitErr)
+
+	for name, value := range captured {
+		store.SetVar(step.Name+"."+name, value)
+		store.SetVar(name, value)
+	}
+	if step.SetCwd && cwdFound {
+		store.SetCwd(cwd)
+	}
+	store.AppendHistory(*execution)
+
+	events <- Event{
+		Type:     "done",
+		ExitCode: execution.ExitCode,
+		Duration: execution.Duration,
+		TimedOut: execution.TimedOut,
+		Captured: captured,
+	}
+}
+
+func streamStdout(r io.Reader, events chan<- Event, captured map[string]string, cwd *string, cwdFound *bool, rawStdout *strings.Builder) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		switch {
+		case strings.HasPrefix(line, capturePrefix):
+			rest := line[len(capturePrefix):]
+			if idx := strings.Index(rest, "="); idx >= 0 {
+				captured[rest[:idx]] = rest[idx+1:]
+			}
+		case strings.HasPrefix(line, cwdPrefix):
+			*cwd = line[len(cwdPrefix):]
+			*cwdFound = true
+		default:
+			events <- Event{Type: "stdout", Data: line}
+			rawStdout.WriteString(line)
+			rawStdout.WriteString("\n")
+		}
+	}
+}
+
+func streamStderr(r io.Reader, events chan<- Event) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		events <- Event{Type: "stderr", Data: scanner.Text()}
+	}
+}
+
+func exitCodeFrom(waitErr error) int {
+	if waitErr == nil {
+		return 0
+	}
+	var exitErr *exec.ExitError
+	if errors.As(waitErr, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	return -1
+}
+
+func interpreterFor(lang string) (string, bool) {
+	switch lang {
+	case "bash":
+		return "bash", true
+	case "python":
+		return "python3", true
+	default:
+		return "", false
+	}
+}
+
+func resolveDir(sessionCwd, stepCwd string) string {
+	if stepCwd == "" {
+		return sessionCwd
+	}
+	if filepath.IsAbs(stepCwd) {
+		return stepCwd
+	}
+	return filepath.Join(sessionCwd, stepCwd)
+}
+
+// mergeEnv layers the host environment, then session vars, then declared
+// input= values (highest precedence — Requirement 5.3) into a Cmd.Env slice.
+func mergeEnv(sessionVars, inputs map[string]string) []string {
+	merged := map[string]string{}
+	for _, kv := range os.Environ() {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			merged[k] = v
+		}
+	}
+	for k, v := range sessionVars {
+		merged[k] = v
+	}
+	for k, v := range inputs {
+		merged[k] = v
+	}
+
+	env := make([]string, 0, len(merged))
+	for k, v := range merged {
+		env = append(env, k+"="+v)
+	}
+	return env
+}

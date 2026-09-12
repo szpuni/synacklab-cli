@@ -58,13 +58,23 @@
   - Implement `pkg/runbook/danger.go`
   - _Requirements: 8.1, 8.2, 8.4_
 
-- [ ] 8. Implement the execution engine core (TDD)
+- [x] 8. Implement the execution engine core (TDD)
   - Write tests using short-lived real `bash`/`python3` subprocesses: env
     merge precedence (declared input wins over session var), `Dir` resolution
     (step `cwd=` vs session cwd), timeout kill + process-group cleanup (no
-    orphaned children), non-timeout exit code propagation
-  - Implement `pkg/runbook/executor.go` wiring parser output + capture.go +
-    template.go + danger.go into `Engine.Run`
+    orphaned children — verified manually with `ps` after the timeout test),
+    non-timeout exit code propagation, capture/set_cwd updating the session,
+    template substitution applied (and its errors surfaced) before spawn
+  - Implement `pkg/runbook/executor.go` wiring capture.go + template.go into
+    `Engine.Run`; danger.go/confirm gating stays a caller-side check (task 10)
+    since it's a request-validation concern, not an execution-mechanics one
+  - Design adjustments from design.md's sketch: `Engine.Run` takes a
+    `SessionStore` (not a raw `*Session`) for thread-safe reads/writes, plus
+    an explicit `timeout time.Duration` argument — `EffectiveTimeout(step,
+    docDefault)` resolves the step/frontmatter/120s precedence at the call
+    site, keeping the engine decoupled from `Document`/frontmatter
+  - `cmd.Cancel` overridden to `syscall.Kill(-pid, SIGKILL)` so a timeout
+    kills the whole process group, not just the shell/interpreter
   - _Requirements: 3.2, 3.3, 5.1, 5.2, 5.3, 7.1, 7.3, 9.1, 9.2, 9.3_
 
 - [ ] 9. Implement per-execution disk logging (TDD)
