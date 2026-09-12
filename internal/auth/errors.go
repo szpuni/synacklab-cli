@@ -86,7 +86,7 @@ func (e *Error) GetTroubleshootingMessage() string {
 	var sb strings.Builder
 	sb.WriteString("\nTroubleshooting steps:\n")
 	for i, step := range e.TroubleshootingSteps {
-		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, step))
+		fmt.Fprintf(&sb, "%d. %s\n", i+1, step)
 	}
 	return sb.String()
 }
