@@ -286,3 +286,52 @@ gaps the original spec didn't cover:
     `synacklab serve <file.md>`-style examples from the initial spec review
     — left as the historical record of what was originally planned, per
     this file's own account of what actually shipped.
+
+- [x] `serve` gains a directory-mode file-browser sidebar; visual redesign
+  - Follow-up to the previous entry: file/dir/cwd-default resolution for
+    `serve` still forced an ambiguous directory (no `RUNBOOK.md`, more than
+    one `*.md` file) to an error — real feedback was that this should still
+    *start*, with a way to pick a file from the browser instead of failing
+    at the command line.
+  - `pkg/runbook`: added `workspace.go` (`ListMarkdownFiles` — a pruned
+    directory tree containing only `*.md` files and the dirs that
+    transitively hold them, hidden entries skipped; `GET /api/files`) and
+    `POST /api/open` (re-parses a chosen file, builds a fresh
+    `SessionStore` for it — switching documents mid-session resets vars/
+    cwd/history for the new one). Path-traversal is neutralized by cleaning
+    the client-supplied relative path as if rooted at `/` before joining it
+    to root (a leading `..` can't escape `/`, so it can't escape root
+    either) — TDD'd, plus an end-to-end check against the real binary.
+  - `Server.doc`/`.store` became mutable (`activeDoc`, a small
+    `sync.RWMutex`-guarded holder) since `/api/open` can now swap them at
+    runtime; every handler reads through `s.active.get()` instead of a
+    fixed field. Both may be nil (nothing opened yet) — handlers treat that
+    as a normal state (`GET /api/doc` returns `{"active":false}`, running a
+    step 409s with a message pointing at the file list), not an error path.
+  - `EnableWorkspace(root, defaultCwd)` is now unconditional in `serve`
+    (`internal/cmd/runbook_serve.go`'s `resolveServeTarget` never errors on
+    ambiguity — an unresolved directory just means nothing is preselected,
+    the frontend's sidebar picks from there) — `run`/`fmt` keep the old
+    hard-fail `resolveRunbookPath` since they have no way to prompt.
+  - Frontend rewrite (`pkg/runbook/web/`): added a dark sidebar file tree
+    (directories collapsible, only `.md` files clickable/highlighted,
+    responsive collapse under 800px) and restyled everything else —
+    Inter font, an indigo accent/design-token system, rounded
+    (`border-radius: full`) buttons, card-style step blocks — modeled on
+    the palette/typography/button system in `~/code/platform-console/
+    frontend/src/styles/globals.css` per the user's explicit reference.
+  - Manually verified against the real binary: a directory with no
+    `RUNBOOK.md` and two ambiguous `.md` files (nested under a subdirectory)
+    now starts `serve` successfully with nothing preselected;
+    `GET /api/files` correctly excludes a `.txt` file placed alongside them;
+    `POST /api/open` switches the active document and `GET /api/doc`
+    reflects it; opening a non-`.md` file and a `../../../etc/passwd.md`
+    traversal attempt both correctly fail (400 and 404) against the live
+    server, not just in unit tests.
+  - **Not verified**: actual visual rendering in a browser — no browser
+    tooling is available in this environment. Checked instead: every CSS
+    class referenced from `app.js`/`index.html` exists in `app.css` (no
+    typo'd class producing unstyled markup), and the full HTTP/JSON
+    contract end-to-end via `curl`. Genuine in-browser visual confirmation
+    (does it actually look good, not just "does it reference real classes")
+    is still outstanding and worth doing once you have a chance to open it.

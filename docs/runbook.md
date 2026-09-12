@@ -21,16 +21,30 @@ history) between requests, never a live shell.
   back to that directory's only `*.md` file if neither exists;
 - omitted entirely — resolved the same way, against the current directory.
 
-A directory with no `RUNBOOK.md`/`runbook.md` and either zero or more than
-one `*.md` file is a clear, actionable error rather than a guess.
+`run` and `fmt` need one specific file up front (there's no interactive way
+for them to ask), so a directory with no `RUNBOOK.md`/`runbook.md` and
+either zero or more than one `*.md` file is a clear, actionable error rather
+than a guess.
+
+`serve` never hard-fails on that ambiguity — see below.
 
 ### `synacklab runbook serve [path] [--port 4747] [--bind 127.0.0.1] [--cwd path]`
 
-Starts the interactive web server. Binds to `127.0.0.1` by default; passing
-`--bind` with any non-loopback address prints an explicit warning before
-starting, since v1 has no authentication — anyone who can reach the port can
-execute arbitrary commands as the local user. `--cwd` sets the session's
-initial working directory (default: the resolved document's own directory).
+Starts the interactive web server. `path` may be a file, a directory, or
+omitted (defaults to the current directory) — either way, the browser shows
+a file-browser sidebar listing every `*.md` file under that directory
+(recursively; other file types don't appear and can't be opened). If `path`
+is a file, or the directory unambiguously resolves to one via the
+`RUNBOOK.md`/`runbook.md`/single-file convention, that document opens
+automatically; otherwise pick one from the sidebar. You can switch to a
+different file in the sidebar at any time — that resets the session (vars,
+cwd, history) to the newly opened document.
+
+Binds to `127.0.0.1` by default; passing `--bind` with any non-loopback
+address prints an explicit warning before starting, since v1 has no
+authentication — anyone who can reach the port can execute arbitrary
+commands as the local user. `--cwd` overrides the session's initial working
+directory (default: each opened file's own directory).
 
 ### `synacklab runbook run [path] --non-interactive [--set VAR=value ...]`
 

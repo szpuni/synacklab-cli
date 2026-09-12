@@ -1,5 +1,80 @@
 const docEl = document.getElementById("doc");
 const cwdEl = document.getElementById("cwd");
+const activeFileEl = document.getElementById("active-file");
+const fileTreeEl = document.getElementById("file-tree");
+const sidebarEl = document.getElementById("sidebar");
+
+let activeFile = null;
+
+async function loadFiles() {
+  const res = await fetch("/api/files");
+  if (!res.ok) {
+    fileTreeEl.innerHTML = "";
+    return;
+  }
+  const tree = await res.json();
+  fileTreeEl.innerHTML = "";
+  if (!tree.children || !tree.children.length) {
+    const empty = document.createElement("div");
+    empty.className = "tree-empty";
+    empty.textContent = "No .md files found";
+    fileTreeEl.appendChild(empty);
+    return;
+  }
+  for (const child of tree.children) {
+    fileTreeEl.appendChild(renderTreeNode(child));
+  }
+}
+
+function renderTreeNode(node) {
+  if (!node.dir) {
+    const item = document.createElement("div");
+    item.className = "tree-file";
+    item.dataset.path = node.path;
+    item.innerHTML = `<span class="file-icon">▤</span><span>${escapeHTML(node.name)}</span>`;
+    item.addEventListener("click", () => void openFile(node.path));
+    return item;
+  }
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "tree-node tree-dir";
+
+  const label = document.createElement("div");
+  label.className = "tree-label";
+  label.innerHTML = `<span class="tree-caret">▾</span><span>${escapeHTML(node.name)}</span>`;
+  label.addEventListener("click", () => wrapper.classList.toggle("collapsed"));
+  wrapper.appendChild(label);
+
+  const children = document.createElement("div");
+  children.className = "tree-children";
+  for (const child of node.children || []) {
+    children.appendChild(renderTreeNode(child));
+  }
+  wrapper.appendChild(children);
+
+  return wrapper;
+}
+
+function highlightActiveFile() {
+  for (const el of fileTreeEl.querySelectorAll(".tree-file")) {
+    el.classList.toggle("active", el.dataset.path === activeFile);
+  }
+}
+
+async function openFile(path) {
+  const res = await fetch("/api/open", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ file: path }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    alert(`Failed to open ${path}: ${body.error || res.statusText}`);
+    return;
+  }
+  sidebarEl.classList.remove("open");
+  await loadDoc();
+}
 
 async function loadDoc() {
   const res = await fetch("/api/doc");
@@ -15,10 +90,34 @@ async function refreshSession() {
 
 function renderDoc(doc) {
   docEl.innerHTML = "";
-  cwdEl.textContent = doc.session.cwd;
-  for (const block of doc.blocks) {
-    docEl.appendChild(block.kind === "step" ? renderStep(block.step) : renderProse(block.prose));
+
+  if (!doc.active) {
+    activeFile = null;
+    activeFileEl.textContent = "Select a runbook";
+    cwdEl.textContent = "";
+    docEl.appendChild(renderEmptyState());
+    highlightActiveFile();
+    return;
   }
+
+  activeFile = doc.active_file || null;
+  activeFileEl.textContent = activeFile || "Runbook";
+  cwdEl.textContent = doc.session.cwd;
+  highlightActiveFile();
+
+  const inner = document.createElement("div");
+  inner.className = "doc-inner";
+  for (const block of doc.blocks) {
+    inner.appendChild(block.kind === "step" ? renderStep(block.step) : renderProse(block.prose));
+  }
+  docEl.appendChild(inner);
+}
+
+function renderEmptyState() {
+  const div = document.createElement("div");
+  div.className = "empty-state";
+  div.innerHTML = `<div class="empty-state-icon">▤</div><div>Choose a runbook from the file list to get started.</div>`;
+  return div;
 }
 
 function renderProse(html) {
@@ -34,7 +133,7 @@ function renderStep(step) {
 
   const header = document.createElement("div");
   header.className = "step-header";
-  header.innerHTML = `<span class="step-name">${escapeHTML(step.name)}</span><span class="step-lang">${escapeHTML(step.lang)}</span>`;
+  header.innerHTML = `<span class="step-name">${escapeHTML(step.name)}</span><span class="badge">${escapeHTML(step.lang)}</span>`;
   card.appendChild(header);
 
   const source = document.createElement("pre");
@@ -47,30 +146,37 @@ function renderStep(step) {
     const inputsDiv = document.createElement("div");
     inputsDiv.className = "inputs";
     for (const name of step.input) {
+      const field = document.createElement("div");
+      field.className = "field";
       const label = document.createElement("label");
+      label.className = "field-label";
       label.textContent = name;
       const input = document.createElement("input");
+      input.className = "field-input";
       input.type = "text";
       inputEls[name] = input;
-      label.appendChild(input);
-      inputsDiv.appendChild(label);
+      field.appendChild(label);
+      field.appendChild(input);
+      inputsDiv.appendChild(field);
     }
     card.appendChild(inputsDiv);
   }
 
-  let confirmBanner = null;
   if (step.requires_confirm) {
-    confirmBanner = document.createElement("div");
+    const confirmBanner = document.createElement("div");
     confirmBanner.className = "confirm-banner";
-    confirmBanner.textContent = `Requires confirmation: ${step.confirm_reason}`;
+    confirmBanner.textContent = `⚠ Requires confirmation: ${step.confirm_reason}`;
     card.appendChild(confirmBanner);
   }
 
+  const actions = document.createElement("div");
+  actions.className = "step-actions";
   const runBtn = document.createElement("button");
   runBtn.type = "button";
+  runBtn.className = `btn btn-md ${step.requires_confirm ? "btn-danger" : "btn-primary"}`;
   runBtn.textContent = "Run";
-  if (step.requires_confirm) runBtn.className = "danger";
-  card.appendChild(runBtn);
+  actions.appendChild(runBtn);
+  card.appendChild(actions);
 
   const output = document.createElement("div");
   output.className = "output";
@@ -158,4 +264,9 @@ document.getElementById("reset-btn").addEventListener("click", async () => {
   await loadDoc();
 });
 
+document.getElementById("sidebar-toggle").addEventListener("click", () => {
+  sidebarEl.classList.toggle("open");
+});
+
+void loadFiles();
 void loadDoc();

@@ -26,21 +26,56 @@ func webRoot() http.FileSystem {
 // Server wires the REST/WebSocket API around a parsed Document, its Session,
 // and an Engine. One Server per running `serve` process (Requirement 14.1).
 type Server struct {
-	doc      *Document
-	store    SessionStore
-	engine   Engine
-	registry *executionRegistry
-	upgrader websocket.Upgrader
+	active     *activeDoc
+	engine     Engine
+	registry   *executionRegistry
+	upgrader   websocket.Upgrader
+	root       string // "" disables the file-browser endpoints (/api/files, /api/open)
+	defaultCwd string // overrides a newly-opened file's own directory as its session cwd, if set
 }
 
+// activeDoc holds the currently-open Document/Session, swappable at runtime
+// via /api/open when a Server is in workspace (directory) mode. Both may be
+// nil, meaning nothing is open yet.
+type activeDoc struct {
+	mu    sync.RWMutex
+	doc   *Document
+	store SessionStore
+}
+
+func (a *activeDoc) get() (*Document, SessionStore) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.doc, a.store
+}
+
+func (a *activeDoc) set(doc *Document, store SessionStore) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.doc, a.store = doc, store
+}
+
+// NewServer creates a Server around doc/store. Both may be nil (nothing
+// open yet) — pair with EnableWorkspace so the frontend's file browser can
+// open one.
 func NewServer(doc *Document, store SessionStore, engine Engine) *Server {
 	return &Server{
-		doc: doc, store: store, engine: engine, registry: newExecutionRegistry(),
+		active: &activeDoc{doc: doc, store: store}, engine: engine, registry: newExecutionRegistry(),
 		// CheckOrigin is permissive: serve binds 127.0.0.1 by default and v1
 		// has no auth story at all (Requirement 13.3), so origin-checking
 		// wouldn't add real protection over what a local tool already accepts.
 		upgrader: websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }},
 	}
+}
+
+// EnableWorkspace turns on the left-pane file browser rooted at root: GET
+// /api/files lists its *.md files and POST /api/open switches the active
+// document to one of them. defaultCwd, if non-empty, overrides a newly
+// opened file's own directory as its session's initial cwd (mirroring
+// serve's --cwd flag). Call before Routes().
+func (s *Server) EnableWorkspace(root, defaultCwd string) {
+	s.root = root
+	s.defaultCwd = defaultCwd
 }
 
 func (s *Server) Routes() http.Handler {
@@ -50,6 +85,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/session/reset", s.handlePostSessionReset)
 	mux.HandleFunc("POST /api/steps/{name}/run", s.handlePostStepRun)
 	mux.HandleFunc("GET /ws/executions/{id}", s.handleWSExecution)
+	mux.HandleFunc("GET /api/files", s.handleGetFiles)
+	mux.HandleFunc("POST /api/open", s.handlePostOpen)
 	mux.Handle("GET /", http.FileServer(webRoot()))
 	return mux
 }

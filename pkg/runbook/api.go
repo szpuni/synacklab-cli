@@ -61,14 +61,20 @@ func toSessionView(sess *Session) sessionView {
 }
 
 func (s *Server) handleGetDoc(w http.ResponseWriter, _ *http.Request) {
-	blocks := make([]blockView, len(s.doc.Blocks))
-	for i, b := range s.doc.Blocks {
+	doc, store := s.active.get()
+	if doc == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"active": false, "workspace": s.root != ""})
+		return
+	}
+
+	blocks := make([]blockView, len(doc.Blocks))
+	for i, b := range doc.Blocks {
 		bv := blockView{Kind: b.Kind}
 		if b.Kind == BlockProse {
 			bv.Prose = renderProseHTML(b.Prose)
 		}
 		if b.Step != nil {
-			requiresConfirm, reason := RequiresConfirmation(b.Step, s.doc.Frontmatter.DangerPatterns)
+			requiresConfirm, reason := RequiresConfirmation(b.Step, doc.Frontmatter.DangerPatterns)
 			bv.Step = &stepView{
 				Name: b.Step.Name, Lang: b.Step.Lang, Source: b.Step.Source,
 				Input: b.Step.Input, Capture: b.Step.Capture, Confirm: b.Step.Confirm,
@@ -80,8 +86,11 @@ func (s *Server) handleGetDoc(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"blocks":  blocks,
-		"session": toSessionView(s.store.Get()),
+		"active":      true,
+		"workspace":   s.root != "",
+		"active_file": relativeToRoot(s.root, doc.Path),
+		"blocks":      blocks,
+		"session":     toSessionView(store.Get()),
 	})
 }
 
@@ -96,12 +105,22 @@ func renderProseHTML(markdown string) string {
 }
 
 func (s *Server) handleGetSession(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, toSessionView(s.store.Get()))
+	_, store := s.active.get()
+	if store == nil {
+		writeJSON(w, http.StatusOK, sessionView{Vars: map[string]string{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, toSessionView(store.Get()))
 }
 
 func (s *Server) handlePostSessionReset(w http.ResponseWriter, _ *http.Request) {
-	s.store.Reset(s.doc.Dir)
-	writeJSON(w, http.StatusOK, toSessionView(s.store.Get()))
+	doc, store := s.active.get()
+	if doc == nil || store == nil {
+		writeError(w, http.StatusConflict, "no runbook open")
+		return
+	}
+	store.Reset(doc.Dir)
+	writeJSON(w, http.StatusOK, toSessionView(store.Get()))
 }
 
 type runRequest struct {
@@ -110,8 +129,14 @@ type runRequest struct {
 }
 
 func (s *Server) handlePostStepRun(w http.ResponseWriter, r *http.Request) {
+	doc, store := s.active.get()
+	if doc == nil {
+		writeError(w, http.StatusConflict, "no runbook open — select one from the file list")
+		return
+	}
+
 	name := r.PathValue("name")
-	step, ok := s.doc.Steps[name]
+	step, ok := doc.Steps[name]
 	if !ok {
 		writeError(w, http.StatusNotFound, "unknown step "+name)
 		return
@@ -132,15 +157,15 @@ func (s *Server) handlePostStepRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := CheckConfirmation(step, s.doc.Frontmatter.DangerPatterns, req.Confirmed); err != nil {
+	if err := CheckConfirmation(step, doc.Frontmatter.DangerPatterns, req.Confirmed); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	// Detached from the request context: the run must outlive the HTTP
 	// handler, which returns as soon as it hands back the execution_id.
-	timeout := EffectiveTimeout(step, s.doc.Frontmatter.DefaultTimeout)
-	_, events, err := s.engine.Run(context.Background(), step, req.Inputs, timeout, s.store)
+	timeout := EffectiveTimeout(step, doc.Frontmatter.DefaultTimeout)
+	_, events, err := s.engine.Run(context.Background(), step, req.Inputs, timeout, store)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

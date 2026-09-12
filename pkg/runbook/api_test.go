@@ -22,6 +22,13 @@ func newTestServer(t *testing.T, src string) (*Server, string) {
 	return srv, doc.Path
 }
 
+// activeStore returns the Server's current SessionStore, for tests that
+// need to inspect/mutate session state directly.
+func activeStore(s *Server) SessionStore {
+	_, store := s.active.get()
+	return store
+}
+
 func TestHandleGetDoc_ReturnsBlocksAndSession(t *testing.T) {
 	srv, _ := newTestServer(t, "# Title\n\n```bash {name=hello}\necho hi\n```\n")
 
@@ -78,14 +85,14 @@ func TestHandleGetSession_ReturnsVarsCwdHistory(t *testing.T) {
 
 func TestHandlePostSessionReset_ClearsVars(t *testing.T) {
 	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
-	srv.store.SetVar("A", "1")
+	activeStore(srv).SetVar("A", "1")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/session/reset", nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Empty(t, srv.store.Get().Vars)
+	assert.Empty(t, activeStore(srv).Get().Vars)
 }
 
 func TestHandlePostStepRun_MissingInputReturns400(t *testing.T) {
@@ -97,7 +104,7 @@ func TestHandlePostStepRun_MissingInputReturns400(t *testing.T) {
 	srv.Routes().ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Empty(t, srv.store.Get().History)
+	assert.Empty(t, activeStore(srv).Get().History)
 }
 
 func TestHandlePostStepRun_UnconfirmedDangerStepReturns400(t *testing.T) {
@@ -145,5 +152,5 @@ func TestHandlePostStepRun_ValidRunReturnsAcceptedAndExecutesAsync(t *testing.T)
 		t.Fatal("execution did not complete in time")
 	}
 
-	assert.Equal(t, "hi", srv.store.Get().Vars["OUT"])
+	assert.Equal(t, "hi", activeStore(srv).Get().Vars["OUT"])
 }
