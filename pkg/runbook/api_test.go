@@ -32,7 +32,32 @@ func TestHandleGetDoc_ReturnsBlocksAndSession(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	body := rec.Body.String()
 	assert.Contains(t, body, "\"hello\"")
-	assert.Contains(t, body, "Title")
+	assert.Contains(t, body, "<h1>Title</h1>", "prose should be server-rendered to HTML so the frontend needs no markdown library")
+}
+
+func TestHandleGetDoc_ExposesConfirmationRequirement(t *testing.T) {
+	src := "---\ndanger_patterns:\n  - \"rm -rf\"\n---\n```bash {name=wipe}\nrm -rf /tmp/x\n```\n\n```bash {name=safe}\necho hi\n```\n"
+	srv, _ := newTestServer(t, src)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/doc", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	var got struct {
+		Blocks []struct {
+			Step *struct {
+				Name            string `json:"name"`
+				RequiresConfirm bool   `json:"requires_confirm"`
+				ConfirmReason   string `json:"confirm_reason,omitempty"`
+			} `json:"step,omitempty"`
+		} `json:"blocks"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+
+	require.Len(t, got.Blocks, 2)
+	assert.True(t, got.Blocks[0].Step.RequiresConfirm)
+	assert.Contains(t, got.Blocks[0].Step.ConfirmReason, "rm -rf")
+	assert.False(t, got.Blocks[1].Step.RequiresConfirm)
 }
 
 func TestHandleGetSession_ReturnsVarsCwdHistory(t *testing.T) {

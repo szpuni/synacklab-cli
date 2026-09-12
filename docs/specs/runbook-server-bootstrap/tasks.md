@@ -122,15 +122,23 @@
     Switched to `context.Background()` for the async run.
   - _Requirements: 3.4, 3.5_
 
-- [ ] 12. Build the embedded frontend SPA
+- [x] 12. Build the embedded frontend SPA
   - Implement `pkg/runbook/web/{index.html,app.js,app.css}`: render prose +
     steps in order, Run controls, input form fields gating Run, live
     stdout/stderr panel via the WS endpoint, session var/cwd display that
     updates without reload, confirmation prompt showing the matched danger
     pattern
   - Wire `go:embed` in `pkg/runbook/server.go`
-  - Manually verify in a browser against a real fixture runbook (no automated
-    browser test in v1)
+  - Added server-side prose rendering (`renderProseHTML` in api.go, via the
+    already-imported goldmark) and `stepView.RequiresConfirm`/`ConfirmReason`
+    (Requirement 8.3) — both covered by unit tests, since they're backend
+    logic; also added `server_test.go` asserting the embedded SPA is served
+    correctly (index.html, app.js/app.css content, app.js referencing the
+    real API/WS paths) as the closest thing to a smoke test available here
+  - **Not done**: manual in-browser verification — no browser tooling is
+    available in this environment, and there's no `serve` CLI command yet
+    (task 13) to launch against. Flagging honestly per instructions rather
+    than claiming it was checked; worth doing once task 13 lands
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 8.3_
 
 - [ ] 13. Implement `synacklab serve` command

@@ -1,11 +1,14 @@
 package runbook
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+
+	"github.com/yuin/goldmark"
 )
 
 type blockView struct {
@@ -15,14 +18,16 @@ type blockView struct {
 }
 
 type stepView struct {
-	Name    string   `json:"name"`
-	Lang    string   `json:"lang"`
-	Source  string   `json:"source"`
-	Input   []string `json:"input,omitempty"`
-	Capture []string `json:"capture,omitempty"`
-	Confirm bool     `json:"confirm"`
-	Cwd     string   `json:"cwd,omitempty"`
-	SetCwd  bool     `json:"set_cwd"`
+	Name            string   `json:"name"`
+	Lang            string   `json:"lang"`
+	Source          string   `json:"source"`
+	Input           []string `json:"input,omitempty"`
+	Capture         []string `json:"capture,omitempty"`
+	Confirm         bool     `json:"confirm"`
+	Cwd             string   `json:"cwd,omitempty"`
+	SetCwd          bool     `json:"set_cwd"`
+	RequiresConfirm bool     `json:"requires_confirm"`
+	ConfirmReason   string   `json:"confirm_reason,omitempty"`
 }
 
 type sessionView struct {
@@ -58,12 +63,17 @@ func toSessionView(sess *Session) sessionView {
 func (s *Server) handleGetDoc(w http.ResponseWriter, _ *http.Request) {
 	blocks := make([]blockView, len(s.doc.Blocks))
 	for i, b := range s.doc.Blocks {
-		bv := blockView{Kind: b.Kind, Prose: b.Prose}
+		bv := blockView{Kind: b.Kind}
+		if b.Kind == BlockProse {
+			bv.Prose = renderProseHTML(b.Prose)
+		}
 		if b.Step != nil {
+			requiresConfirm, reason := RequiresConfirmation(b.Step, s.doc.Frontmatter.DangerPatterns)
 			bv.Step = &stepView{
 				Name: b.Step.Name, Lang: b.Step.Lang, Source: b.Step.Source,
 				Input: b.Step.Input, Capture: b.Step.Capture, Confirm: b.Step.Confirm,
 				Cwd: b.Step.Cwd, SetCwd: b.Step.SetCwd,
+				RequiresConfirm: requiresConfirm, ConfirmReason: reason,
 			}
 		}
 		blocks[i] = bv
@@ -73,6 +83,16 @@ func (s *Server) handleGetDoc(w http.ResponseWriter, _ *http.Request) {
 		"blocks":  blocks,
 		"session": toSessionView(s.store.Get()),
 	})
+}
+
+// renderProseHTML converts a prose block's raw Markdown to HTML server-side
+// so the embedded frontend needs no client-side Markdown library.
+func renderProseHTML(markdown string) string {
+	var buf bytes.Buffer
+	if err := goldmark.Convert([]byte(markdown), &buf); err != nil {
+		return markdown
+	}
+	return buf.String()
 }
 
 func (s *Server) handleGetSession(w http.ResponseWriter, _ *http.Request) {
@@ -133,7 +153,9 @@ func (s *Server) handlePostStepRun(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(v)
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

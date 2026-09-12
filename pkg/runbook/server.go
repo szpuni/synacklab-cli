@@ -2,12 +2,26 @@ package runbook
 
 import (
 	"crypto/rand"
+	"embed"
 	"encoding/hex"
+	"io/fs"
 	"net/http"
 	"sync"
 
 	"github.com/gorilla/websocket"
 )
+
+//go:embed web
+var webFS embed.FS
+
+// webRoot strips the "web" prefix so the embedded files serve at "/", "/app.js", etc.
+func webRoot() http.FileSystem {
+	sub, err := fs.Sub(webFS, "web")
+	if err != nil {
+		panic(err) // web/ is embedded at build time; a missing dir is a build-time bug, not a runtime one
+	}
+	return http.FS(sub)
+}
 
 // Server wires the REST/WebSocket API around a parsed Document, its Session,
 // and an Engine. One Server per running `serve` process (Requirement 14.1).
@@ -36,6 +50,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/session/reset", s.handlePostSessionReset)
 	mux.HandleFunc("POST /api/steps/{name}/run", s.handlePostStepRun)
 	mux.HandleFunc("GET /ws/executions/{id}", s.handleWSExecution)
+	mux.Handle("GET /", http.FileServer(webRoot()))
 	return mux
 }
 
