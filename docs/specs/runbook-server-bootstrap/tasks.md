@@ -173,11 +173,19 @@
     so this makes that explicit instead of silently ignoring the missing flag
   - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5_
 
-- [ ] 15. Implement `synacklab fmt`
+- [x] 15. Implement `synacklab fmt`
   - Create `internal/cmd/runbook_fmt.go` and canonical-attribute-order
-    rewriting in `pkg/runbook/parser.go` (or a small `fmt.go` sibling)
+    rewriting in `pkg/runbook/fmt.go` (sibling to parser.go, sharing its
+    fence-scanning/`parseFenceAttrs` helpers rather than duplicating them)
   - Write unit tests: canonical key order/spacing applied, prose/code/attr
-    values unchanged, parse error leaves file untouched
+    values unchanged, non-runnable fences and frontmatter untouched, parse
+    error returns nil+error (so the CLI layer never writes a partial file),
+    idempotent on a second run, original fence marker length preserved
+  - `FormatDocument` operates on the raw parsed attribute map (which fence
+    text is copied from) rather than reconstructing fences from the typed
+    `Step` struct — the struct can't distinguish "explicitly `confirm=false`"
+    from "omitted", so reconstructing from it would risk inventing or
+    dropping attributes; rewriting only key order/spacing in place avoids that
   - _Requirements: 12.1, 12.2, 12.3_
 
 - [ ] 16. Integration tests
