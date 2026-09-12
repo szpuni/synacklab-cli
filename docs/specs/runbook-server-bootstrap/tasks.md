@@ -225,9 +225,17 @@
     instead of the intended prose. Removed the backticks.
   - _Requirements: 10.4, 13.2_
 
-- [ ] 18. Full-suite verification
-  - `go test ./...` (including `-race` for session/executor packages)
-  - `golangci-lint run`
-  - Confirm no file in `pkg/runbook/` or `internal/cmd/` exceeds 500 lines;
-    split (e.g. `executor_bash.go`/`executor_python.go`, `api_steps.go`) if so
+- [x] 18. Full-suite verification
+  - `go build ./...`, `go vet ./...`: clean
+  - `go test ./... -race`: all packages pass, including `pkg/runbook` and
+    `internal/cmd`
+  - `golangci-lint run ./...`: 0 issues in anything this feature touched.
+    One pre-existing, unrelated finding remains
+    (`internal/auth/errors.go:89`, staticcheck QF1012) — left alone per the
+    project's own don't-fix-what-you-didn't-break convention, flagged here
+    instead
+  - File sizes: largest new file is `executor.go` at 250 lines — no split
+    needed, well under the 500-line limit
+  - `make build` succeeds; `go mod tidy` leaves `go.mod`/`go.sum` unchanged
+    (already tidy)
   - _Requirements: all_
