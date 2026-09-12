@@ -88,12 +88,21 @@
     side effect — real `serve`/`run` call sites always pass one)
   - _Requirements: 4.1, 4.2, 4.3, 9.3_
 
-- [ ] 10. Implement REST API handlers (TDD)
+- [x] 10. Implement REST API handlers (TDD)
   - Write `httptest`-based table-driven tests per handler: `GET /api/doc`,
     `GET /api/session`, `POST /api/session/reset`, `POST /api/steps/{name}/run`
-    (missing input → 400, unconfirmed danger/confirm step → 400, valid → 200 +
-    `execution_id`)
-  - Implement `pkg/runbook/api.go`
+    (missing input → 400, unconfirmed danger/confirm step → 400, valid → 202 +
+    `execution_id`, unknown step → 404)
+  - Implement `pkg/runbook/server.go` (`Server`, route wiring via Go 1.22+
+    `http.ServeMux` method+path patterns — no external router needed) and
+    `pkg/runbook/api.go` (handlers + JSON view types)
+  - `server.go` also introduces `executionRegistry`: `POST .../run` starts
+    the engine and returns `execution_id` immediately (202), a background
+    goroutine drains that execution's event channel into a buffered record
+    keyed by id — this is what task 11's WS handler will replay from, so a
+    fast execution finishing before a client upgrades isn't lost
+  - Execution ids are generated with `crypto/rand` rather than adding a UUID
+    dependency for something this small
   - _Requirements: 2.2, 5.2, 8.1, 8.2, 14.3, 14.4_
 
 - [ ] 11. Implement WebSocket execution streaming (TDD)
