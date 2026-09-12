@@ -89,15 +89,15 @@ func relativeToRoot(root, path string) string {
 
 func (s *Server) handleGetFiles(w http.ResponseWriter, _ *http.Request) {
 	if s.root == "" {
-		writeError(w, http.StatusNotFound, "workspace mode not enabled")
+		s.writeError(w, http.StatusNotFound, "workspace mode not enabled")
 		return
 	}
 	tree, err := ListMarkdownFiles(s.root)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		s.writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, tree)
+	s.writeJSON(w, http.StatusOK, tree)
 }
 
 type openRequest struct {
@@ -106,40 +106,40 @@ type openRequest struct {
 
 func (s *Server) handlePostOpen(w http.ResponseWriter, r *http.Request) {
 	if s.root == "" {
-		writeError(w, http.StatusNotFound, "workspace mode not enabled")
+		s.writeError(w, http.StatusNotFound, "workspace mode not enabled")
 		return
 	}
 
 	var req openRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "malformed request body: "+err.Error())
+		s.writeError(w, http.StatusBadRequest, "malformed request body: "+err.Error())
 		return
 	}
 	if !strings.EqualFold(filepath.Ext(req.File), ".md") {
-		writeError(w, http.StatusBadRequest, "only .md files can be opened")
+		s.writeError(w, http.StatusBadRequest, "only .md files can be opened")
 		return
 	}
 
 	absPath := resolveWorkspaceFile(s.root, req.File)
 	if !isWithinRoot(s.root, absPath) {
-		writeError(w, http.StatusBadRequest, "invalid file path")
+		s.writeError(w, http.StatusBadRequest, "invalid file path")
 		return
 	}
 
 	info, err := os.Stat(absPath)
 	if err != nil || info.IsDir() {
-		writeError(w, http.StatusNotFound, "file not found: "+req.File)
+		s.writeError(w, http.StatusNotFound, "file not found: "+req.File)
 		return
 	}
 
 	source, err := os.ReadFile(absPath)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "failed to read "+req.File+": "+err.Error())
+		s.writeError(w, http.StatusNotFound, "failed to read "+req.File+": "+err.Error())
 		return
 	}
 	doc, err := (&GoldmarkParser{}).Parse(source, absPath)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to parse "+req.File+": "+err.Error())
+		s.writeError(w, http.StatusBadRequest, "failed to parse "+req.File+": "+err.Error())
 		return
 	}
 
@@ -150,5 +150,7 @@ func (s *Server) handlePostOpen(w http.ResponseWriter, r *http.Request) {
 	store := NewSessionStore(NewID(), absPath, cwd)
 	s.active.set(doc, store)
 
-	writeJSON(w, http.StatusOK, map[string]string{"opened": relativeToRoot(s.root, absPath)})
+	relPath := relativeToRoot(s.root, absPath)
+	s.logger.Info("opened %s", relPath)
+	s.writeJSON(w, http.StatusOK, map[string]string{"opened": relPath})
 }

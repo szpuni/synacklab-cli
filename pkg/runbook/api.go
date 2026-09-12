@@ -63,7 +63,7 @@ func toSessionView(sess *Session) sessionView {
 func (s *Server) handleGetDoc(w http.ResponseWriter, _ *http.Request) {
 	doc, store := s.active.get()
 	if doc == nil {
-		writeJSON(w, http.StatusOK, map[string]any{"active": false, "workspace": s.root != ""})
+		s.writeJSON(w, http.StatusOK, map[string]any{"active": false, "workspace": s.root != ""})
 		return
 	}
 
@@ -85,7 +85,7 @@ func (s *Server) handleGetDoc(w http.ResponseWriter, _ *http.Request) {
 		blocks[i] = bv
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	s.writeJSON(w, http.StatusOK, map[string]any{
 		"active":      true,
 		"workspace":   s.root != "",
 		"active_file": relativeToRoot(s.root, doc.Path),
@@ -107,20 +107,20 @@ func renderProseHTML(markdown string) string {
 func (s *Server) handleGetSession(w http.ResponseWriter, _ *http.Request) {
 	_, store := s.active.get()
 	if store == nil {
-		writeJSON(w, http.StatusOK, sessionView{Vars: map[string]string{}})
+		s.writeJSON(w, http.StatusOK, sessionView{Vars: map[string]string{}})
 		return
 	}
-	writeJSON(w, http.StatusOK, toSessionView(store.Get()))
+	s.writeJSON(w, http.StatusOK, toSessionView(store.Get()))
 }
 
 func (s *Server) handlePostSessionReset(w http.ResponseWriter, _ *http.Request) {
 	doc, store := s.active.get()
 	if doc == nil || store == nil {
-		writeError(w, http.StatusConflict, "no runbook open")
+		s.writeError(w, http.StatusConflict, "no runbook open")
 		return
 	}
 	store.Reset(doc.Dir)
-	writeJSON(w, http.StatusOK, toSessionView(store.Get()))
+	s.writeJSON(w, http.StatusOK, toSessionView(store.Get()))
 }
 
 type runRequest struct {
@@ -131,34 +131,34 @@ type runRequest struct {
 func (s *Server) handlePostStepRun(w http.ResponseWriter, r *http.Request) {
 	doc, store := s.active.get()
 	if doc == nil {
-		writeError(w, http.StatusConflict, "no runbook open — select one from the file list")
+		s.writeError(w, http.StatusConflict, "no runbook open — select one from the file list")
 		return
 	}
 
 	name := r.PathValue("name")
 	step, ok := doc.Steps[name]
 	if !ok {
-		writeError(w, http.StatusNotFound, "unknown step "+name)
+		s.writeError(w, http.StatusNotFound, "unknown step "+name)
 		return
 	}
 
 	var req runRequest
 	if r.Body != nil {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-			writeError(w, http.StatusBadRequest, "malformed request body: "+err.Error())
+			s.writeError(w, http.StatusBadRequest, "malformed request body: "+err.Error())
 			return
 		}
 	}
 
 	for _, inputName := range step.Input {
 		if _, ok := req.Inputs[inputName]; !ok {
-			writeError(w, http.StatusBadRequest, "missing required input: "+inputName)
+			s.writeError(w, http.StatusBadRequest, "missing required input: "+inputName)
 			return
 		}
 	}
 
 	if err := CheckConfirmation(step, doc.Frontmatter.DangerPatterns, req.Confirmed); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		s.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -167,15 +167,15 @@ func (s *Server) handlePostStepRun(w http.ResponseWriter, r *http.Request) {
 	timeout := EffectiveTimeout(step, doc.Frontmatter.DefaultTimeout)
 	_, events, err := s.engine.Run(context.Background(), step, req.Inputs, timeout, store)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		s.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	id := s.registry.start(events)
-	writeJSON(w, http.StatusAccepted, map[string]string{"execution_id": id})
+	id := s.registry.start(step.Name, events, s.logger)
+	s.writeJSON(w, http.StatusAccepted, map[string]string{"execution_id": id})
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
+func (s *Server) writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	enc := json.NewEncoder(w)
@@ -183,6 +183,14 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = enc.Encode(v)
 }
 
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
+// writeError writes a JSON {"error": message} response and logs it — Warn
+// for a client-caused failure (4xx), Error for a server-caused one (5xx) —
+// so every error response also shows up on the running server's console.
+func (s *Server) writeError(w http.ResponseWriter, status int, message string) {
+	if status >= http.StatusInternalServerError {
+		s.logger.Error("%s", message)
+	} else {
+		s.logger.Warn("%s", message)
+	}
+	s.writeJSON(w, status, map[string]string{"error": message})
 }

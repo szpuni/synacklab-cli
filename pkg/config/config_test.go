@@ -50,6 +50,34 @@ github:
 	}
 }
 
+func TestLoadConfig_LogLevel(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte("log_level: warn\n"), 0644); err != nil {
+		t.Fatalf("Failed to create test config file: %v", err)
+	}
+
+	config, err := LoadConfigFromPath(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if config.LogLevel != "warn" {
+		t.Errorf("Expected LogLevel = warn, got %s", config.LogLevel)
+	}
+}
+
+func TestLoadConfig_LogLevelDefaultsToEmpty(t *testing.T) {
+	config, err := LoadConfigFromPath("/non/existent/path")
+	if err != nil {
+		t.Fatalf("Expected no error for non-existent config, got: %v", err)
+	}
+
+	if config.LogLevel != "" {
+		t.Errorf("Expected empty LogLevel when unset, got %s", config.LogLevel)
+	}
+}
+
 func TestLoadConfigNonExistent(t *testing.T) {
 	// Test loading non-existent config file
 	config, err := LoadConfigFromPath("/non/existent/path")

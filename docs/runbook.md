@@ -11,6 +11,22 @@ explicit click, and no process outlives its own execution — the server
 holds only session state (captured variables, working directory, execution
 history) between requests, never a live shell.
 
+## Console logging
+
+Both `serve` and `run` log to the console: every HTTP request, each step's
+start/finish (with duration), non-zero exit codes and timeouts, and
+validation/open failures. Verbosity is controlled by `log_level` in
+`~/.synacklab/config.yaml` — `error`, `warn`, or `info` (default `info`,
+showing all three):
+
+```yaml
+log_level: warn
+```
+
+An unset or invalid value falls back to (or, for an invalid string, errors
+out naming) `info`. There's no per-invocation flag — this is a global
+setting alongside the rest of synacklab's config.
+
 ## Commands
 
 `serve`, `run`, and `fmt` are subcommands of `synacklab runbook` (see

@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"synacklab/pkg/config"
 	"synacklab/pkg/runbook"
 )
 
@@ -54,10 +55,20 @@ func runServe(_ *cobra.Command, args []string) error {
 		return err
 	}
 
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return err
+	}
+	logger, err := buildLogger(cfg)
+	if err != nil {
+		return err
+	}
+
 	srv, label, err := buildRunbookServer(root, initialFile, serveCwd)
 	if err != nil {
 		return err
 	}
+	srv.SetLogger(logger)
 
 	addr := net.JoinHostPort(serveBind, fmt.Sprintf("%d", servePort))
 	if !isLoopbackBind(serveBind) {

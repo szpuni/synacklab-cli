@@ -10,6 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"synacklab/pkg/config"
+	rblog "synacklab/pkg/log"
 	"synacklab/pkg/runbook"
 )
 
@@ -74,17 +76,26 @@ func runRunbookRun(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to resolve working directory: %w", err)
 	}
 
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return err
+	}
+	logger, err := buildLogger(cfg)
+	if err != nil {
+		return err
+	}
+
 	store := runbook.NewSessionStore(runbook.NewID(), docPath, absCwd)
 	engine := runbook.NewEngine(runbook.NewFileLogWriter(".synacklab"))
 
-	return executeNonInteractive(doc, sets, store, engine, os.Stdout)
+	return executeNonInteractive(doc, sets, store, engine, os.Stdout, logger)
 }
 
 // executeNonInteractive runs every Step in document order, stopping at the
 // first failure (Requirement 11.4). A step with an unmet input=, or one
 // requiring confirmation, fails before any process is spawned for it
 // (Requirements 11.2, 11.3).
-func executeNonInteractive(doc *runbook.Document, sets map[string]string, store runbook.SessionStore, engine runbook.Engine, out io.Writer) error {
+func executeNonInteractive(doc *runbook.Document, sets map[string]string, store runbook.SessionStore, engine runbook.Engine, out io.Writer, logger *rblog.Logger) error {
 	for _, block := range doc.Blocks {
 		if block.Kind != runbook.BlockStep {
 			continue
@@ -109,11 +120,12 @@ func executeNonInteractive(doc *runbook.Document, sets map[string]string, store 
 			return fmt.Errorf("step %q requires confirmation (%s); non-interactive mode has no way to confirm, so it fails closed — run it via `synacklab serve` instead", step.Name, reason)
 		}
 
-		fmt.Fprintf(out, "==> %s\n", step.Name)
+		logger.Info("running step %q", step.Name)
 
 		timeout := runbook.EffectiveTimeout(step, doc.Frontmatter.DefaultTimeout)
 		_, events, err := engine.Run(context.Background(), step, inputs, timeout, store)
 		if err != nil {
+			logger.Error("step %q: %s", step.Name, err)
 			return fmt.Errorf("step %q: %w", step.Name, err)
 		}
 
@@ -128,11 +140,14 @@ func executeNonInteractive(doc *runbook.Document, sets map[string]string, store 
 		}
 
 		if done.TimedOut {
+			logger.Warn("step %q timed out", step.Name)
 			return fmt.Errorf("step %q timed out", step.Name)
 		}
 		if done.ExitCode != 0 {
+			logger.Warn("step %q exited with code %d", step.Name, done.ExitCode)
 			return fmt.Errorf("step %q exited with code %d", step.Name, done.ExitCode)
 		}
+		logger.Info("step %q finished (duration=%s)", step.Name, done.Duration)
 	}
 	return nil
 }

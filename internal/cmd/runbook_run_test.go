@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	rblog "synacklab/pkg/log"
 	"synacklab/pkg/runbook"
 )
 
@@ -33,7 +34,7 @@ func TestExecuteNonInteractive_RunsStepsInOrderAndSucceeds(t *testing.T) {
 	store := runbook.NewSessionStore("s1", doc.Path, t.TempDir())
 	var out bytes.Buffer
 
-	err := executeNonInteractive(doc, nil, store, runbook.NewEngine(nil), &out)
+	err := executeNonInteractive(doc, nil, store, runbook.NewEngine(nil), &out, rblog.Discard())
 
 	require.NoError(t, err)
 	assert.Contains(t, out.String(), "one")
@@ -41,12 +42,37 @@ func TestExecuteNonInteractive_RunsStepsInOrderAndSucceeds(t *testing.T) {
 	assert.Len(t, store.Get().History, 2)
 }
 
+func TestExecuteNonInteractive_LogsStepLifecycleAtInfo(t *testing.T) {
+	doc := parseTestDoc(t, "```bash {name=first}\necho one\n```\n")
+	store := runbook.NewSessionStore("s1", doc.Path, t.TempDir())
+	var out, logs bytes.Buffer
+
+	err := executeNonInteractive(doc, nil, store, runbook.NewEngine(nil), &out, rblog.New(&logs, rblog.LevelInfo))
+
+	require.NoError(t, err)
+	assert.Contains(t, logs.String(), `"first"`)
+	assert.Contains(t, logs.String(), "running step")
+	assert.Contains(t, logs.String(), "finished")
+}
+
+func TestExecuteNonInteractive_LogsNonZeroExitAtWarn(t *testing.T) {
+	doc := parseTestDoc(t, "```bash {name=fails}\nexit 1\n```\n")
+	store := runbook.NewSessionStore("s1", doc.Path, t.TempDir())
+	var out, logs bytes.Buffer
+
+	err := executeNonInteractive(doc, nil, store, runbook.NewEngine(nil), &out, rblog.New(&logs, rblog.LevelInfo))
+
+	require.Error(t, err)
+	assert.Contains(t, logs.String(), "WARN")
+	assert.Contains(t, logs.String(), "exited with code 1")
+}
+
 func TestExecuteNonInteractive_MissingSetFailsBeforeExecution(t *testing.T) {
 	doc := parseTestDoc(t, "```bash {name=greet, input=NAME}\necho hi $NAME\n```\n")
 	store := runbook.NewSessionStore("s1", doc.Path, t.TempDir())
 	var out bytes.Buffer
 
-	err := executeNonInteractive(doc, nil, store, runbook.NewEngine(nil), &out)
+	err := executeNonInteractive(doc, nil, store, runbook.NewEngine(nil), &out, rblog.Discard())
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "NAME")
@@ -58,7 +84,7 @@ func TestExecuteNonInteractive_ConfirmStepFailsClosed(t *testing.T) {
 	store := runbook.NewSessionStore("s1", doc.Path, t.TempDir())
 	var out bytes.Buffer
 
-	err := executeNonInteractive(doc, nil, store, runbook.NewEngine(nil), &out)
+	err := executeNonInteractive(doc, nil, store, runbook.NewEngine(nil), &out, rblog.Discard())
 
 	require.Error(t, err)
 	assert.Empty(t, store.Get().History)
@@ -69,7 +95,7 @@ func TestExecuteNonInteractive_DangerPatternFailsClosed(t *testing.T) {
 	store := runbook.NewSessionStore("s1", doc.Path, t.TempDir())
 	var out bytes.Buffer
 
-	err := executeNonInteractive(doc, nil, store, runbook.NewEngine(nil), &out)
+	err := executeNonInteractive(doc, nil, store, runbook.NewEngine(nil), &out, rblog.Discard())
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "rm -rf")
@@ -81,7 +107,7 @@ func TestExecuteNonInteractive_NonZeroExitStopsRemainingSteps(t *testing.T) {
 	store := runbook.NewSessionStore("s1", doc.Path, t.TempDir())
 	var out bytes.Buffer
 
-	err := executeNonInteractive(doc, nil, store, runbook.NewEngine(nil), &out)
+	err := executeNonInteractive(doc, nil, store, runbook.NewEngine(nil), &out, rblog.Discard())
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "fails")

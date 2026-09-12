@@ -335,3 +335,54 @@ gaps the original spec didn't cover:
     contract end-to-end via `curl`. Genuine in-browser visual confirmation
     (does it actually look good, not just "does it reference real classes")
     is still outstanding and worth doing once you have a chance to open it.
+
+- [x] Console logging (error/warn/info), level controlled from config
+  - Feedback: `serve`'s console showed nothing after the startup banner —
+    all activity happens via the browser, so there was no way to see what
+    the server was doing without opening dev tools. Added leveled logging
+    (`error`/`warn`/`info`) and a `log_level` setting in
+    `~/.synacklab/config.yaml` (default `info`, showing all three) to
+    control it, per the request that this live in synacklab's main config
+    rather than a per-command flag.
+  - New `pkg/log` package (TDD'd): a minimal `Logger` (`Error`/`Warn`/`Info`,
+    timestamped, mutex-guarded for concurrent use) filtering by a configured
+    threshold; `log.Discard()` for tests/callers that want silence.
+  - `pkg/config.Config` gained `LogLevel string \`yaml:"log_level,omitempty"\``.
+  - `pkg/runbook.Server` gained `SetLogger` (default: `log.Discard()`, so
+    existing/unrelated tests stay quiet) and now logs: every HTTP request
+    (method/path/status/duration, via a new logging middleware in
+    `Routes()`), each step's start/finish/duration, non-zero exit codes and
+    timeouts at `Warn`, and every error response via a shared
+    `writeError` (client failures at `Warn`, 5xx at `Error`) — so error
+    logging is automatic at every call site rather than sprinkled by hand.
+  - **Bug found and fixed by this change's own tests**: wrapping
+    `http.ResponseWriter` in a `statusRecorder` (to capture the status code
+    for the request-logging line) broke the WebSocket upgrade — gorilla's
+    `Upgrade` needs the `http.Hijacker` interface, which embedding only the
+    `http.ResponseWriter` *interface* silently hides. Existing WS tests
+    caught this immediately (`websocket: bad handshake`). Fixed by adding a
+    `Hijack()` method that forwards to the underlying writer.
+  - **Race found and fixed by this change's own tests**: `executionRegistry`
+    closed `rec.done` *before* logging that execution's completion, so a
+    caller (or a test) waiting on `done` could read the log buffer before
+    the write happened — a real ordering bug, not just a flaky test.
+    Fixed by logging first, then closing `done`.
+  - `internal/cmd`: new `buildLogger(cfg)` shared by `serve` and `run`;
+    `run`'s existing `"==> stepname"` boundary print became a leveled
+    `logger.Info`, with `Warn`/`Error` added for its failure paths — the
+    actual step stdout/stderr passthrough is untouched (always shown,
+    regardless of level, since that's real command output, not a log).
+  - Manually verified against the real binary: `log_level: info` shows
+    per-request and per-step lines exactly as designed; `log_level: error`
+    shows only the startup banner (everything else correctly suppressed);
+    an invalid value (`log_level: verbose`) fails fast with a clear error
+    naming the bad value; `run --non-interactive` shows the same leveled
+    step lifecycle around its unfiltered stdout passthrough.
+  - **Unrelated but worth recording**: fixing this surfaced that an earlier
+    `brew install gh` attempt (from the PR-creation task) had left the
+    system's `go` command broken — Homebrew had unlinked the working 1.26.6
+    before failing on outdated Command Line Tools, and stray build
+    processes kept re-breaking the link for a while after. Resolved by
+    killing the stray processes, removing the incomplete partial-upgrade
+    keg, and relinking 1.26.6. Flagged to the user directly; not otherwise
+    related to this feature.
