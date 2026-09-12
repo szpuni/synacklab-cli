@@ -141,11 +141,22 @@
     than claiming it was checked; worth doing once task 13 lands
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 8.3_
 
-- [ ] 13. Implement `synacklab serve` command
+- [x] 13. Implement `synacklab serve` command
   - Create `internal/cmd/runbook_serve.go`: `--port 4747`, `--bind 127.0.0.1`,
     `--cwd path` flags; loopback-only default; explicit warning banner when
     `--bind` is non-loopback
   - Write unit tests for flag parsing/defaults and the bind-warning trigger
+  - Exported `runbook.NewID()` (renamed from the execution-registry-only
+    `newExecutionID`) for the CLI to generate a session id
+  - **Manually verified end-to-end** (real binary, not just httptest): built
+    `./bin/synacklab`, ran `serve` against a fixture runbook in the
+    background, then drove it for real — `curl` on `/`, `/app.js`,
+    `/api/doc`; `POST /api/steps/get_ip/run`; a small Python WebSocket client
+    reading `/ws/executions/{id}` to completion; `GET /api/session` showing
+    the captured var; and the `.synacklab/.../steps/1-get_ip.log` file on
+    disk. All matched expected behavior. (Hit and fixed my own test-harness
+    mistake along the way — a shell `&` background attempt outlived its
+    subshell and held the port for the next attempt; not a product bug.)
   - _Requirements: 13.1, 13.2, 13.3_
 
 - [ ] 14. Implement `synacklab run --non-interactive`

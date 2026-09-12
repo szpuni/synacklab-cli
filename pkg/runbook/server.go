@@ -101,7 +101,7 @@ func newExecutionRegistry() *executionRegistry {
 // start records a new execution under a fresh id and drains its event
 // channel into the record in the background.
 func (r *executionRegistry) start(events <-chan Event) string {
-	id := newExecutionID()
+	id := NewID()
 	rec := &executionRecord{done: make(chan struct{})}
 
 	r.mu.Lock()
@@ -127,7 +127,9 @@ func (r *executionRegistry) get(id string) (*executionRecord, bool) {
 	return rec, ok
 }
 
-func newExecutionID() string {
+// NewID generates a random id, used for both execution ids and (by CLI
+// callers) session ids.
+func NewID() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
