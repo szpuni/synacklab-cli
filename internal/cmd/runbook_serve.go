@@ -1,15 +1,21 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"synacklab/pkg/config"
+	rblog "synacklab/pkg/log"
 	"synacklab/pkg/runbook"
 )
 
@@ -71,13 +77,51 @@ func runServe(_ *cobra.Command, args []string) error {
 	srv.SetLogger(logger)
 
 	addr := net.JoinHostPort(serveBind, fmt.Sprintf("%d", servePort))
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", addr, err)
+	}
+
 	if !isLoopbackBind(serveBind) {
 		fmt.Printf("WARNING: --bind %s exposes this server beyond localhost.\n", serveBind)
 		fmt.Println("Anyone who can reach this port can execute arbitrary commands as the local user — there is no authentication in v1.")
 	}
 
-	fmt.Printf("Serving %s at http://%s\n", label, addr)
-	return http.ListenAndServe(addr, srv.Routes())
+	// SIGINT/SIGTERM triggers graceful shutdown (serveHTTP) and also cancels
+	// srv's baseCtx, so an in-flight step's process group is killed rather
+	// than orphaned when the server exits (Requirement 3.2's "no process
+	// outlives its own execution" extended to the server's own lifetime).
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	srv.SetBaseContext(ctx)
+
+	fmt.Printf("Serving %s at http://%s\n", label, ln.Addr())
+	return serveHTTP(ctx, ln, srv.Routes(), logger)
+}
+
+// serveHTTP runs handler on ln until ctx is canceled, then shuts down
+// gracefully (bounded by a 5s timeout). Split out from runServe so it's
+// testable without going through cobra or the real signal-derived context.
+func serveHTTP(ctx context.Context, ln net.Listener, handler http.Handler, logger *rblog.Logger) error {
+	httpServer := &http.Server{Handler: handler}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- httpServer.Serve(ln)
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		logger.Info("shutting down...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return httpServer.Shutdown(shutdownCtx)
+	}
 }
 
 // resolveServeTarget resolves pathArg to a workspace root plus an optional

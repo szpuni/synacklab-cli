@@ -11,6 +11,16 @@ explicit click, and no process outlives its own execution — the server
 holds only session state (captured variables, working directory, execution
 history) between requests, never a live shell.
 
+## Stopping it
+
+Both `serve` and `run` handle Ctrl+C (SIGINT) and SIGTERM: `serve` shuts
+its HTTP server down gracefully, and either command kills any
+currently-running step's process immediately rather than leaving it
+orphaned — steps run in their own process group (so a per-step timeout can
+kill the whole group without touching the parent), which otherwise means a
+plain, unhandled signal wouldn't reach a step that's mid-execution when the
+CLI process exits.
+
 ## Console logging
 
 Both `serve` and `run` log to the console: every HTTP request, each step's

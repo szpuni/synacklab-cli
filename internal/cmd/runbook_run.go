@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -88,14 +90,23 @@ func runRunbookRun(_ *cobra.Command, args []string) error {
 	store := runbook.NewSessionStore(runbook.NewID(), docPath, absCwd)
 	engine := runbook.NewEngine(runbook.NewFileLogWriter(".synacklab"))
 
-	return executeNonInteractive(doc, sets, store, engine, os.Stdout, logger)
+	// SIGINT/SIGTERM cancels the currently-running step's process group
+	// instead of leaving it orphaned (it runs in its own group — see
+	// executor.go's timeout-kill mechanism — so the default "just die"
+	// behavior on an unhandled signal would otherwise not reach it).
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	return executeNonInteractive(ctx, doc, sets, store, engine, os.Stdout, logger)
 }
 
 // executeNonInteractive runs every Step in document order, stopping at the
 // first failure (Requirement 11.4). A step with an unmet input=, or one
 // requiring confirmation, fails before any process is spawned for it
-// (Requirements 11.2, 11.3).
-func executeNonInteractive(doc *runbook.Document, sets map[string]string, store runbook.SessionStore, engine runbook.Engine, out io.Writer, logger *rblog.Logger) error {
+// (Requirements 11.2, 11.3). ctx is the parent for every step's execution —
+// canceling it (e.g. via SIGINT/SIGTERM) kills the currently-running step's
+// process group rather than orphaning it.
+func executeNonInteractive(ctx context.Context, doc *runbook.Document, sets map[string]string, store runbook.SessionStore, engine runbook.Engine, out io.Writer, logger *rblog.Logger) error {
 	for _, block := range doc.Blocks {
 		if block.Kind != runbook.BlockStep {
 			continue
@@ -123,7 +134,7 @@ func executeNonInteractive(doc *runbook.Document, sets map[string]string, store 
 		logger.Info("running step %q", step.Name)
 
 		timeout := runbook.EffectiveTimeout(step, doc.Frontmatter.DefaultTimeout)
-		_, events, err := engine.Run(context.Background(), step, inputs, timeout, store)
+		_, events, err := engine.Run(ctx, step, inputs, timeout, store)
 		if err != nil {
 			logger.Error("step %q: %s", step.Name, err)
 			return fmt.Errorf("step %q: %w", step.Name, err)

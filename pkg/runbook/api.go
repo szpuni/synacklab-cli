@@ -2,7 +2,6 @@ package runbook
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -162,10 +161,11 @@ func (s *Server) handlePostStepRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Detached from the request context: the run must outlive the HTTP
-	// handler, which returns as soon as it hands back the execution_id.
+	// Detached from the *request* context (which ends as soon as this
+	// handler returns the execution_id) but still tied to the server's own
+	// baseCtx, so a shutdown can still cancel an in-flight execution.
 	timeout := EffectiveTimeout(step, doc.Frontmatter.DefaultTimeout)
-	_, events, err := s.engine.Run(context.Background(), step, req.Inputs, timeout, store)
+	_, events, err := s.engine.Run(s.baseCtx, step, req.Inputs, timeout, store)
 	if err != nil {
 		s.writeError(w, http.StatusBadRequest, err.Error())
 		return

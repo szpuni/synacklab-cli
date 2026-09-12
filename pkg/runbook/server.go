@@ -2,6 +2,7 @@ package runbook
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
@@ -39,6 +40,7 @@ type Server struct {
 	root       string // "" disables the file-browser endpoints (/api/files, /api/open)
 	defaultCwd string // overrides a newly-opened file's own directory as its session cwd, if set
 	logger     *rblog.Logger
+	baseCtx    context.Context // parent for every step execution; canceling it kills any in-flight step
 }
 
 // activeDoc holds the currently-open Document/Session, swappable at runtime
@@ -74,7 +76,8 @@ func NewServer(doc *Document, store SessionStore, engine Engine) *Server {
 		upgrader: websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }},
 		// Silent by default so existing/unrelated tests don't gain console
 		// noise; real callers (the CLI) call SetLogger with a real one.
-		logger: rblog.Discard(),
+		logger:  rblog.Discard(),
+		baseCtx: context.Background(),
 	}
 }
 
@@ -82,6 +85,16 @@ func NewServer(doc *Document, store SessionStore, engine Engine) *Server {
 // traffic; the default is silent (log.Discard()).
 func (s *Server) SetLogger(l *rblog.Logger) {
 	s.logger = l
+}
+
+// SetBaseContext sets the parent context every step execution runs under.
+// Canceling it (e.g. the CLI canceling its own shutdown context on
+// SIGINT/SIGTERM) kills any in-flight execution's process group via the
+// same mechanism a per-step timeout uses — so a running step is never
+// orphaned by the server process it belongs to exiting. Defaults to
+// context.Background(). Call before Routes() serves traffic.
+func (s *Server) SetBaseContext(ctx context.Context) {
+	s.baseCtx = ctx
 }
 
 // EnableWorkspace turns on the left-pane file browser rooted at root: GET

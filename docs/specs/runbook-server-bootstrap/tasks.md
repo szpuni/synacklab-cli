@@ -386,3 +386,51 @@ gaps the original spec didn't cover:
     killing the stray processes, removing the incomplete partial-upgrade
     keg, and relinking 1.26.6. Flagged to the user directly; not otherwise
     related to this feature.
+
+- [x] Signal handling (Ctrl+C/SIGTERM) for `serve` and `run`
+  - Feedback: Ctrl+C stopped working against `serve` — required killing the
+    process from another shell. Root cause: nothing installed a signal
+    handler, and every executed step spawns in its **own process group**
+    (`Setpgid: true` in `executor.go`, needed so a per-step timeout can kill
+    the whole group without recursively killing the parent). That isolation
+    is exactly what stops a plain, unhandled SIGINT from reaching an
+    in-flight step's process when the parent dies — so even where a bare
+    `^C` did kill the top-level process, any step running via the browser at
+    that moment would be orphaned rather than cleaned up.
+  - `pkg/runbook.Server` gained `SetBaseContext(ctx)`: the parent context
+    every step execution runs under (default `context.Background()`).
+    `handlePostStepRun` now runs steps under it instead of a bare
+    `context.Background()`, so canceling it kills any in-flight execution's
+    process group via the exact same mechanism a timeout already uses
+    (`Engine.Run` derives its per-step timeout context from whatever parent
+    it's given — this needed no engine changes at all).
+  - `internal/cmd/runbook_serve.go`: `serve` now binds its own
+    `net.Listener` up front (so a bind failure surfaces before printing
+    "Serving..."), derives a `signal.NotifyContext(... os.Interrupt,
+    syscall.SIGTERM)`, passes it to `srv.SetBaseContext`, and drives the
+    HTTP server through a new `serveHTTP(ctx, ln, handler, logger)` that
+    shuts down gracefully (bounded 5s) on cancellation instead of blocking
+    forever in `http.ListenAndServe`.
+  - `internal/cmd/runbook_run.go`: `executeNonInteractive` gained a `ctx`
+    parameter (first arg) threaded into `engine.Run` in place of
+    `context.Background()`; `runRunbookRun` derives the same kind of
+    signal-cancelable context and passes it through, so Ctrl+C during
+    `run --non-interactive` kills the current step instead of orphaning it.
+  - TDD'd at both layers: `pkg/runbook`'s
+    `TestHandlePostStepRun_CancelingBaseContextKillsInFlightExecution` and
+    `internal/cmd`'s `TestExecuteNonInteractive_ContextCancellationKillsInFlightStep`
+    each start a 5s-sleep step, cancel the context after ~100ms, and assert
+    both prompt return (not the full 5s) and — via `ps aux` — no orphaned
+    `sleep` process; `internal/cmd`'s `TestServeHTTP_*` tests cover the
+    graceful-shutdown wrapper directly against a real ephemeral-port
+    listener.
+  - **Manually verified against the real binary** (not just unit tests):
+    sent a real `SIGINT` (Python `subprocess` + `send_signal`, avoiding the
+    shell-`&`-backgrounding artifact that made an earlier ad hoc repro
+    attempt misleading — backgrounding a job sets SIGINT to ignored per
+    POSIX shell semantics, which isn't the user's actual foreground-Ctrl+C
+    scenario) to a running `serve` process — three repeated runs all exited
+    0 with "shutting down..." logged; sent it again while a step was
+    actively mid-`sleep 5` — exited 0 immediately with no orphaned `sleep`
+    process; same mid-step signal against `run --non-interactive` — exited
+    non-zero immediately (not after the full 5s), again with no orphan.
