@@ -25,13 +25,19 @@ type Parser interface {
 type GoldmarkParser struct{}
 
 func (p *GoldmarkParser) Parse(source []byte, docPath string) (*Document, error) {
+	fm, source, err := parseFrontmatter(source)
+	if err != nil {
+		return nil, err
+	}
+
 	md := goldmark.New()
 	root := md.Parser().Parse(text.NewReader(source))
 
 	doc := &Document{
-		Path:  docPath,
-		Dir:   filepath.Dir(docPath),
-		Steps: map[string]*Step{},
+		Path:        docPath,
+		Dir:         filepath.Dir(docPath),
+		Frontmatter: fm,
+		Steps:       map[string]*Step{},
 	}
 
 	autoIndex := 0

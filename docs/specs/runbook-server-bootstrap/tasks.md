@@ -19,9 +19,11 @@
     around fence cut points isn't
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
-- [ ] 3. Implement YAML frontmatter parsing (TDD)
+- [x] 3. Implement YAML frontmatter parsing (TDD)
   - Write tests: `default_timeout`/`danger_patterns` present, absent, partial
   - Implement `pkg/runbook/frontmatter.go` using existing `gopkg.in/yaml.v3`
+  - Wired into `GoldmarkParser.Parse`: frontmatter is stripped before
+    goldmark sees the source, `Document.Frontmatter` populated
   - _Requirements: 1.6, 1.7_
 
 - [ ] 4. Implement in-memory session store (TDD)
