@@ -34,7 +34,7 @@
     clearing vars+cwd; each execution is already logged to disk independently)
   - _Requirements: 14.1, 14.2, 14.3, 14.4_
 
-- [ ] 5. Implement capture-trailer generation and parsing (TDD)
+- [x] 5. Implement capture-trailer generation and parsing (TDD)
   - Write tests: bash trailer emits `__SYNACLAB_CAP__` lines matching
     `capture=` names, python trailer equivalent, unset var captured as empty
     string, `__SYNACLAB_CWD__` line generation/parsing for `set_cwd=true`,
