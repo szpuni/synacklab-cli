@@ -7,12 +7,16 @@
     strips unused requires, so they're added alongside the code that imports them
   - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 2. Implement Markdown + fence-attribute parsing (TDD)
+- [x] 2. Implement Markdown + fence-attribute parsing (TDD)
   - Write table-driven tests first: all attrs present, missing attrs, duplicate
     explicit names, malformed attribute syntax, non-bash/python fences,
     auto-generated names, document-order preservation
   - Implement `pkg/runbook/parser.go` (goldmark wrapper + custom fence-info
     parser) to make the tests pass
+  - Prose is copied verbatim by cutting only at runnable-fence boundaries
+    (not reconstructed from the AST) — goldmark's `Lines()` drops ATX heading
+    markers, so AST reconstruction of prose was lossy; raw byte-range slicing
+    around fence cut points isn't
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
 - [ ] 3. Implement YAML frontmatter parsing (TDD)
