@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -107,4 +110,38 @@ func TestBuildRunbookServer_ParseErrorIsError(t *testing.T) {
 
 	_, _, err := buildRunbookServer(dir, docPath, "")
 	assert.Error(t, err)
+}
+
+// TestBuildRunbookServer_ActiveFileIsReportedWithRelativeArgs is a
+// regression test: root/initialFile as passed on the command line are
+// relative to the invocation directory, but the server's internal root is
+// absolutized in EnableWorkspace. Parsing the document at a path that
+// stays relative while root is absolute broke relativeToRoot (used for
+// GET /api/doc's active_file), silently returning "" instead of the
+// resolved file name — found by manually exercising a real serve
+// invocation, not by an existing test.
+func TestBuildRunbookServer_ActiveFileIsReportedWithRelativeArgs(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "RUNBOOK.md"), []byte("```bash {name=hello}\necho hi\n```\n"), 0o644))
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+
+	root, initialFile, err := resolveServeTarget("") // relative: "." and "RUNBOOK.md"
+	require.NoError(t, err)
+
+	srv, _, err := buildRunbookServer(root, initialFile, "")
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/doc", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	var got struct {
+		ActiveFile string `json:"active_file"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Equal(t, "RUNBOOK.md", got.ActiveFile)
 }
