@@ -32,7 +32,7 @@ confirmation (confirm=true or a danger_patterns match) fails the run closed
 
 func init() {
 	runbookRunCmd.Flags().BoolVar(&runNonInteractive, "non-interactive", false,
-		"execute the full document top to bottom (required — interactive execution is `synacklab serve`'s job)")
+		"execute the full document top to bottom (required — interactive execution is synacklab serve's job)")
 	runbookRunCmd.Flags().StringArrayVar(&runSetFlags, "set", nil, "VAR=value for a step's input= (repeatable)")
 	rootCmd.AddCommand(runbookRunCmd)
 }

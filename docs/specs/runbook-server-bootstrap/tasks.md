@@ -204,12 +204,25 @@
     command, not just by the engine in isolation
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 6.4, 9.1, 9.2, 11.1–11.5_
 
-- [ ] 17. Documentation and example runbook
+- [x] 17. Documentation and example runbook
   - Add a `docs/` (or README) section covering `serve`/`run`/`fmt`, the fence
     attribute table, and an explicit security note on `{{...}}` template
     substitution vs. `input=`/`capture=` (per project-brief.md §13)
   - Add an example runbook `.md` fixture demonstrating input, capture,
     set_cwd, confirm, and danger_patterns
+  - `docs/runbook.md` (linked from `docs/README.md`) +
+    `examples/runbook-demo.md`
+  - **Manually verified against the real binary** while writing these: the
+    doc's non-interactive example command turned out to be misleading as
+    first written — the fixture's `confirm_before_running` step correctly
+    fails the non-interactive run closed (Requirement 11.3), so I rewrote
+    both the doc and the fixture's own header to say so accurately instead
+    of implying a clean run through all five steps
+  - **Bug found and fixed along the way**: `--non-interactive`'s flag help
+    text used backtick-quoted `` `synacklab serve` `` in its description;
+    pflag treats backticks in a flag's usage string as a value-type
+    placeholder for `-h` output, so it was rendering as a garbled type name
+    instead of the intended prose. Removed the backticks.
   - _Requirements: 10.4, 13.2_
 
 - [ ] 18. Full-suite verification
