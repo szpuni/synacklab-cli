@@ -188,12 +188,20 @@
     dropping attributes; rewriting only key order/spacing in place avoids that
   - _Requirements: 12.1, 12.2, 12.3_
 
-- [ ] 16. Integration tests
-  - End-to-end fixture runbook driven through `serve`'s HTTP+WS API
-    (input→capture chaining across two steps), assert final session state
-  - `run --non-interactive` fixture with `--set`, assert exit code + logs
-  - Timeout fixture (`timeout=1s` sleeping longer), assert `timed_out` +
-    no orphaned child process
+- [x] 16. Integration tests
+  - `pkg/runbook/integration_test.go`: fixture runbook driven through
+    `serve`'s real HTTP+WS API as a browser client would — run step one,
+    read its captured value back over the WebSocket, feed it in as step
+    two's declared `input=`, confirm session history has both in order
+  - Same file: timeout fixture driven through the same async-goroutine path
+    the real API handler uses (not a direct `Engine.Run` call), `ps aux`
+    confirms no orphaned `sleep` process survives the kill
+  - `internal/cmd/runbook_run_integration_test.go`: drives the actual `run`
+    RunE entrypoint end-to-end (file read, parse, `--set`, real
+    `FileLogWriter` under `.synacklab`) rather than the narrower
+    `executeNonInteractive` unit tests from task 14, which use a nil log
+    writer — confirms the on-disk log actually gets written by the real CLI
+    command, not just by the engine in isolation
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 6.4, 9.1, 9.2, 11.1–11.5_
 
 - [ ] 17. Documentation and example runbook
