@@ -51,7 +51,7 @@
     on-disk log so `{{steps.x.stdout}}` can resolve without reading the log
   - _Requirements: 10.1, 10.2, 10.3_
 
-- [ ] 7. Implement danger-pattern matching and confirm gating (TDD)
+- [x] 7. Implement danger-pattern matching and confirm gating (TDD)
   - Write tests: pattern match/no-match, `confirm=true` always requires
     confirmation, danger pattern forces confirmation regardless of
     `confirm=false`
