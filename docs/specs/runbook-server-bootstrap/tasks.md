@@ -26,10 +26,12 @@
     goldmark sees the source, `Document.Frontmatter` populated
   - _Requirements: 1.6, 1.7_
 
-- [ ] 4. Implement in-memory session store (TDD)
+- [x] 4. Implement in-memory session store (TDD)
   - Write tests: `SetVar` last-write-wins, `SetCwd`, `AppendHistory`, `Reset`,
     concurrent access under `go test -race`
   - Implement `pkg/runbook/session.go`
+  - `Reset` clears vars/cwd but leaves History intact (brief only specifies
+    clearing vars+cwd; each execution is already logged to disk independently)
   - _Requirements: 14.1, 14.2, 14.3, 14.4_
 
 - [ ] 5. Implement capture-trailer generation and parsing (TDD)
