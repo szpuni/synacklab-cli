@@ -77,11 +77,15 @@
     kills the whole process group, not just the shell/interpreter
   - _Requirements: 3.2, 3.3, 5.1, 5.2, 5.3, 7.1, 7.3, 9.1, 9.2, 9.3_
 
-- [ ] 9. Implement per-execution disk logging (TDD)
+- [x] 9. Implement per-execution disk logging (TDD)
   - Write tests: log file created under `.synacklab/<doc-slug>/<session-id>/steps/`
     with correct `<n>-<name>.log` naming, contains stdout/stderr/exit
     code/timing, written even when `capture=` is absent, written on timeout
   - Implement `pkg/runbook/logstore.go`, wire into `Engine.Run`
+  - Added `Execution.Stderr` (types.go) alongside the existing `Stdout` field
+    so the log can include both streams; `NewEngine` now takes a `LogWriter`
+    (nil disables logging, used by engine tests that don't care about that
+    side effect — real `serve`/`run` call sites always pass one)
   - _Requirements: 4.1, 4.2, 4.3, 9.3_
 
 - [ ] 10. Implement REST API handlers (TDD)

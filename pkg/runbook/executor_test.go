@@ -28,7 +28,7 @@ func drainEvents(t *testing.T, ch <-chan Event) (stdout, stderr []string, done E
 
 func runStep(t *testing.T, step *Step, inputs map[string]string, timeout time.Duration, store SessionStore) (stdout, stderr []string, done Event) {
 	t.Helper()
-	engine := NewEngine()
+	engine := NewEngine(nil)
 	_, events, err := engine.Run(context.Background(), step, inputs, timeout, store)
 	require.NoError(t, err)
 	return drainEvents(t, events)
@@ -143,9 +143,30 @@ func TestEngine_Run_UnresolvedTemplateReferenceFailsBeforeSpawn(t *testing.T) {
 	store := NewSessionStore("s1", "/tmp/runbook.md", t.TempDir())
 	step := &Step{Name: "tmpl", Lang: "bash", Source: "echo {{vars.missing}}\n"}
 
-	engine := NewEngine()
+	engine := NewEngine(nil)
 	_, events, err := engine.Run(context.Background(), step, nil, time.Second, store)
 
 	assert.Error(t, err)
 	assert.Nil(t, events)
+}
+
+func TestEngine_Run_WritesLogAndSetsLogPath(t *testing.T) {
+	logDir := t.TempDir()
+	store := NewSessionStore("s1", "/tmp/deploy.md", t.TempDir())
+	step := &Step{Name: "logged", Lang: "bash", Source: "echo out\n>&2 echo err\n"}
+
+	engine := NewEngine(NewFileLogWriter(logDir))
+	execution, events, err := engine.Run(context.Background(), step, nil, time.Second, store)
+	require.NoError(t, err)
+	drainEvents(t, events)
+
+	require.NotEmpty(t, execution.LogPath)
+	content, readErr := os.ReadFile(execution.LogPath)
+	require.NoError(t, readErr)
+	assert.Contains(t, string(content), "out")
+	assert.Contains(t, string(content), "err")
+
+	sess := store.Get()
+	require.Len(t, sess.History, 1)
+	assert.Equal(t, execution.LogPath, sess.History[0].LogPath)
 }

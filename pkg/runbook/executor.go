@@ -37,10 +37,15 @@ type Engine interface {
 
 // ProcessEngine spawns exactly one bash/python3 process per Run call. No
 // process is kept alive between calls (Requirement 3.2).
-type ProcessEngine struct{}
+type ProcessEngine struct {
+	logWriter LogWriter
+}
 
-func NewEngine() Engine {
-	return &ProcessEngine{}
+// NewEngine creates an Engine. logWriter may be nil to skip disk logging
+// (used by tests that don't care about that side effect); real callers
+// should always pass one so every execution is logged (Requirement 4).
+func NewEngine(logWriter LogWriter) Engine {
+	return &ProcessEngine{logWriter: logWriter}
 }
 
 func (e *ProcessEngine) Run(ctx context.Context, step *Step, inputs map[string]string, timeout time.Duration, store SessionStore) (*Execution, <-chan Event, error) {
@@ -107,7 +112,7 @@ func (e *ProcessEngine) wait(
 
 	captured := map[string]string{}
 	cwd, cwdFound := "", false
-	var rawStdout strings.Builder
+	var rawStdout, rawStderr strings.Builder
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -117,7 +122,7 @@ func (e *ProcessEngine) wait(
 	}()
 	go func() {
 		defer wg.Done()
-		streamStderr(stderrPipe, events)
+		streamStderr(stderrPipe, events, &rawStderr)
 	}()
 	wg.Wait()
 
@@ -126,6 +131,7 @@ func (e *ProcessEngine) wait(
 	execution.Duration = time.Since(execution.Started)
 	execution.TimedOut = errors.Is(runCtx.Err(), context.DeadlineExceeded)
 	execution.Stdout = rawStdout.String()
+	execution.Stderr = rawStderr.String()
 	execution.Captured = captured
 	execution.ExitCode = exitCodeFrom(waitErr)
 
@@ -135,6 +141,14 @@ func (e *ProcessEngine) wait(
 	}
 	if step.SetCwd && cwdFound {
 		store.SetCwd(cwd)
+	}
+
+	if e.logWriter != nil {
+		sess := store.Get()
+		index := len(sess.History) + 1
+		if path, werr := e.logWriter.Write(sess.DocPath, sess.ID, index, *execution); werr == nil {
+			execution.LogPath = path
+		}
 	}
 	store.AppendHistory(*execution)
 
@@ -169,11 +183,14 @@ func streamStdout(r io.Reader, events chan<- Event, captured map[string]string, 
 	}
 }
 
-func streamStderr(r io.Reader, events chan<- Event) {
+func streamStderr(r io.Reader, events chan<- Event, rawStderr *strings.Builder) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
-		events <- Event{Type: "stderr", Data: scanner.Text()}
+		line := scanner.Text()
+		events <- Event{Type: "stderr", Data: line}
+		rawStderr.WriteString(line)
+		rawStderr.WriteString("\n")
 	}
 }
 

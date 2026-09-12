@@ -65,6 +65,7 @@ type Execution struct {
 	TimedOut bool
 	LogPath  string
 	Stdout   string
+	Stderr   string
 	Captured map[string]string
 }
 
