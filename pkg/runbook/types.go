@@ -54,7 +54,9 @@ type Session struct {
 	History []Execution
 }
 
-// Execution records the result of one Step run.
+// Execution records the result of one Step run. Stdout is kept in memory
+// (in addition to the on-disk log) so {{steps.<name>.stdout}} template
+// references can resolve without re-reading the log file.
 type Execution struct {
 	StepName string
 	Started  time.Time
@@ -62,6 +64,7 @@ type Execution struct {
 	ExitCode int
 	TimedOut bool
 	LogPath  string
+	Stdout   string
 	Captured map[string]string
 }
 

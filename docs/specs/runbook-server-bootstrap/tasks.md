@@ -42,11 +42,13 @@
   - Implement `pkg/runbook/capture.go`
   - _Requirements: 6.1, 6.2, 6.3, 7.2, 7.4_
 
-- [ ] 6. Implement template substitution (TDD)
+- [x] 6. Implement template substitution (TDD)
   - Write tests: `{{steps.x.stdout}}`/`{{steps.x.exit_code}}`/`{{vars.x}}`
     substitution, missing-reference error (no spawn side effect), explicit
     "no shell-escaping" assertion test
   - Implement `pkg/runbook/template.go`
+  - Added `Execution.Stdout` (types.go) — kept in memory alongside the
+    on-disk log so `{{steps.x.stdout}}` can resolve without reading the log
   - _Requirements: 10.1, 10.2, 10.3_
 
 - [ ] 7. Implement danger-pattern matching and confirm gating (TDD)
