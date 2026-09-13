@@ -12,6 +12,9 @@ import (
 type Config struct {
 	AWS    AWSConfig    `yaml:"aws"`
 	GitHub GitHubConfig `yaml:"github"`
+	// LogLevel controls console log verbosity: "error", "warn", or "info"
+	// (default "info" if empty). See pkg/log.ParseLevel.
+	LogLevel string `yaml:"log_level,omitempty"`
 }
 
 // AWSConfig represents AWS-specific configuration

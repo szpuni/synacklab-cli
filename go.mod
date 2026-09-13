@@ -12,9 +12,11 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.21.5
 	github.com/aws/smithy-go v1.22.5
 	github.com/google/go-github/v66 v66.0.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/junegunn/fzf v0.65.1
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.10.0
+	github.com/yuin/goldmark v1.8.6
 	golang.org/x/oauth2 v0.30.0
 	golang.org/x/term v0.34.0
 	gopkg.in/ini.v1 v1.67.0

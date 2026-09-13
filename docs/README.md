@@ -13,6 +13,7 @@ Welcome to the comprehensive documentation for Synacklab CLI, a powerful DevOps 
 - [AWS SSO Authentication](aws-sso.md) - Authenticate and manage AWS profiles
 - [Kubernetes Management](kubernetes.md) - Manage EKS clusters and contexts
 - [GitHub Repository Management](github.md) - Declarative GitHub repository configuration
+- [Runbook Server](runbook.md) - Interactive, human-in-the-loop Markdown runbooks
 
 ### Advanced Usage
 - [Command Reference](commands.md) - Complete command documentation

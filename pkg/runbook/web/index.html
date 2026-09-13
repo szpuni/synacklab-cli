@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app">
+  <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Toggle file browser">☰</button>
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <span class="logo-icon">▶</span>
+      <span class="sidebar-title">Runbook</span>
+    </div>
+    <div id="file-tree" class="file-tree"></div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-info">
+        <span id="active-file" class="active-file">Select a runbook</span>
+        <span id="cwd" class="cwd"></span>
+      </div>
+      <button id="reset-btn" class="btn btn-ghost btn-sm" type="button">Reset session</button>
+    </header>
+    <main id="doc" class="doc"></main>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

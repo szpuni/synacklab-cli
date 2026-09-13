@@ -46,3 +46,5 @@ release/
 # Configuration files (user-specific)
 config.yaml
 .synacklab/
+
+graphify-out/
