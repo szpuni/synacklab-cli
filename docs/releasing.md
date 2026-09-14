@@ -24,6 +24,7 @@ The workflow runs tests, publishes the GitHub release, and commits
 Verify:
 
 ```bash
+brew trust --formula szpuni/synacklab-cli/synacklab                     # first time only
 brew tap szpuni/synacklab-cli https://github.com/szpuni/synacklab-cli   # first time only
 brew update && brew upgrade synacklab   # or: brew install synacklab
 synacklab --help
