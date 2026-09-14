@@ -2,16 +2,12 @@
 
 Releases are built by GoReleaser (`.goreleaser.yaml`) in `.github/workflows/release.yml`
 whenever a `v*` tag is pushed. Each release publishes binaries, `.deb`/`.rpm` packages,
-checksums, and updates the Homebrew formula in `szpuni/homebrew-tap`.
+checksums, and updates the Homebrew formula at `Formula/synacklab.rb` in this repository.
 
-## One-time setup
-
-1. Create an empty public repository `szpuni/homebrew-tap` (the `homebrew-` prefix is
-   required for `brew install szpuni/tap/synacklab` to work).
-2. Create a fine-grained personal access token with **Contents: Read and write** on
-   `szpuni/homebrew-tap` only.
-3. Add it as the Actions secret `HOMEBREW_TAP_GITHUB_TOKEN` in `szpuni/synacklab-cli`
-   (Settings → Secrets and variables → Actions).
+This repository doubles as its own Homebrew tap, so no separate tap repo or extra secret
+is needed: GoReleaser commits the formula to `main` using the workflow's `GITHUB_TOKEN`.
+If `main` becomes branch-protected, that commit will be rejected — allow GitHub Actions
+to bypass the rule or the Homebrew step will fail.
 
 ## Cutting a release
 
@@ -22,13 +18,14 @@ git push origin v1.2.3
 ```
 
 The workflow runs tests, publishes the GitHub release, and commits
-`Formula/synacklab.rb` to the tap. Pre-release tags (e.g. `v1.2.3-rc.1`) are released
-on GitHub but do not update the formula.
+`Formula/synacklab.rb` to `main` (run `git pull` afterwards). Pre-release tags
+(e.g. `v1.2.3-rc.1`) are released on GitHub but do not update the formula.
 
 Verify:
 
 ```bash
-brew update && brew upgrade synacklab   # or: brew install szpuni/tap/synacklab
+brew tap szpuni/synacklab-cli https://github.com/szpuni/synacklab-cli   # first time only
+brew update && brew upgrade synacklab   # or: brew install synacklab
 synacklab --help
 ```
 
@@ -37,6 +34,6 @@ synacklab --help
 CI pins GoReleaser v1.24.0; use the same version.
 
 ```bash
-HOMEBREW_TAP_GITHUB_TOKEN=dummy goreleaser check
-HOMEBREW_TAP_GITHUB_TOKEN=dummy goreleaser release --snapshot --clean   # output in dist/
+GITHUB_TOKEN=dummy goreleaser check
+GITHUB_TOKEN=dummy goreleaser release --snapshot --clean   # output in dist/
 ```

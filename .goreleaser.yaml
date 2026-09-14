@@ -80,7 +80,8 @@ release:
 
     ### Homebrew (macOS/Linux)
     ```bash
-    brew install szpuni/tap/synacklab
+    brew tap szpuni/synacklab-cli https://github.com/szpuni/synacklab-cli
+    brew install synacklab
     ```
 
     ### Package Managers
@@ -94,8 +95,8 @@ brews:
   - name: synacklab
     repository:
       owner: szpuni
-      name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      name: synacklab-cli
+      token: "{{ .Env.GITHUB_TOKEN }}"
     folder: Formula
     homepage: "https://github.com/szpuni/synacklab-cli"
     description: "A command-line tool for DevOps engineers to manage AWS SSO authentication and profile configuration"
