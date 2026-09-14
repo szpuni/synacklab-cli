@@ -10,9 +10,20 @@ This guide covers all methods for installing Synacklab CLI on your system.
 
 ## Installation Methods
 
-### Method 1: Build from Source (Recommended)
+### Method 1: Homebrew (Recommended on macOS/Linux)
 
-This is currently the primary installation method:
+```bash
+brew install szpuni/tap/synacklab
+
+# Update / remove
+brew upgrade synacklab
+brew uninstall synacklab
+```
+
+Homebrew formula installs are not quarantined, so macOS Gatekeeper does not block the
+unsigned binary (unlike a binary downloaded through a browser).
+
+### Method 1b: Build from Source
 
 ```bash
 # Clone the repository
