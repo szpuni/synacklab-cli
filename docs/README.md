@@ -20,6 +20,7 @@ Welcome to the comprehensive documentation for Synacklab CLI, a powerful DevOps 
 - [Configuration Reference](config-reference.md) - All configuration options
 - [Examples](examples.md) - Real-world usage examples
 - [Troubleshooting](troubleshooting.md) - Common issues and solutions
+- [Releasing](releasing.md) - Cut a release and publish the Homebrew formula
 
 ### Development
 - [Development Guide](development.md) - Contributing to Synacklab

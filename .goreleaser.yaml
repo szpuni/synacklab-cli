@@ -13,14 +13,10 @@ builds:
       - CGO_ENABLED=0
     goos:
       - linux
-      - windows
       - darwin
     goarch:
       - amd64
       - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
 
@@ -82,12 +78,34 @@ release:
     go install github.com/synacklab/synacklab/cmd/synacklab@{{.Tag}}
     ```
 
+    ### Homebrew (macOS/Linux)
+    ```bash
+    brew tap szpuni/synacklab-cli https://github.com/szpuni/synacklab-cli
+    brew install synacklab
+    ```
+
     ### Package Managers
     - **Debian/Ubuntu**: Download the `.deb` file and install with `sudo dpkg -i synacklab_*.deb`
     - **RHEL/CentOS/Fedora**: Download the `.rpm` file and install with `sudo rpm -i synacklab_*.rpm`
 
     ## Checksums
     All binaries are signed and checksums are provided in `checksums.txt`.
+
+brews:
+  - name: synacklab
+    repository:
+      owner: szpuni
+      name: synacklab-cli
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    folder: Formula
+    homepage: "https://github.com/szpuni/synacklab-cli"
+    description: "A command-line tool for DevOps engineers to manage AWS SSO authentication and profile configuration"
+    license: "GPL-3.0-only"
+    skip_upload: auto
+    install: |
+      bin.install "synacklab"
+    test: |
+      system "#{bin}/synacklab", "--help"
 
 nfpms:
   - id: packages
@@ -97,7 +115,7 @@ nfpms:
     homepage: "https://github.com/synacklab/synacklab"
     maintainer: "synacklab"
     description: "A command-line tool for DevOps engineers to manage AWS SSO authentication and profile configuration"
-    license: "MIT"
+    license: "GPL-3.0-only"
     formats:
       - deb
       - rpm

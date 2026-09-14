@@ -31,6 +31,7 @@ A powerful command-line tool for DevOps engineers to streamline AWS SSO authenti
 - **[Configuration Reference](docs/config-reference.md)** - All configuration options
 - **[Examples](docs/examples.md)** - Real-world usage examples
 - **[Troubleshooting](docs/troubleshooting.md)** - Common issues and solutions
+- **[Releasing](docs/releasing.md)** - Cut a release and publish the Homebrew formula
 
 ## ⚡ Quick Start
 
