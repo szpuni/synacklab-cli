@@ -13,6 +13,7 @@ This guide covers all methods for installing Synacklab CLI on your system.
 ### Method 1: Homebrew (Recommended on macOS/Linux)
 
 ```bash
+brew trust --formula szpuni/synacklab-cli/synacklab   # Homebrew 7+ requires trusting third-party taps
 brew tap szpuni/synacklab-cli https://github.com/szpuni/synacklab-cli
 brew install synacklab
 

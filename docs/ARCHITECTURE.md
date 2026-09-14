@@ -49,7 +49,7 @@ These are the highest-touch concepts — touch them and ripples spread everywher
 - **Session vars:** steps can export `${step_name.stdout}` and `${step_name.exit_code}` for later steps
 
 ### CI/CD → Release Pipeline
-**Flow:** lint (golangci-lint) → test → build → integration tests → GoReleaser on v* tags
+**Flow:** lint (golangci-lint) → test → build → integration tests. Releases run separately: `release.yml` → test → GoReleaser on v* tags
 
 **Note:** Lint job runs `--no-config`, so `.golangci-lint.yml` is never applied in CI (flagged AMBIGUOUS).
 

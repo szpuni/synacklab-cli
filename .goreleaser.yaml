@@ -80,6 +80,7 @@ release:
 
     ### Homebrew (macOS/Linux)
     ```bash
+    brew trust --formula szpuni/synacklab-cli/synacklab
     brew tap szpuni/synacklab-cli https://github.com/szpuni/synacklab-cli
     brew install synacklab
     ```
