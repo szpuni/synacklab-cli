@@ -39,8 +39,8 @@
   border-radius: var(--radius-full);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  background: rgba(99, 102, 241, 0.12);
-  color: var(--accent-600);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
 }
 
 .step pre.source {
@@ -88,7 +88,7 @@
 .field-input:focus {
   outline: none;
   border-color: var(--accent-500);
-  box-shadow: 0 0 0 3px var(--accent-glow);
+  box-shadow: 0 0 0 3px var(--accent-100);
 }
 
 .confirm-banner {
@@ -107,10 +107,11 @@
 .step-actions { display: flex; align-items: center; gap: 10px; }
 
 .output {
-  background: #0b0e14;
-  color: #e2e8f0;
+  background: #f8fafc;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
   padding: 12px 14px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   min-height: 1.6em;
   max-height: 320px;
   overflow-y: auto;
@@ -121,5 +122,5 @@
   margin-top: 12px;
 }
 
-.output .stderr-line { color: #fca5a5; }
-.output .status-line { color: #7dd3fc; margin-top: 6px; }
+.output .stderr-line { color: var(--danger-600); }
+.output .status-line { color: var(--accent-600); margin-top: 6px; }
