@@ -6,6 +6,7 @@
 <title>Runbook</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="steps.css">
 </head>
 <body>
 <div class="app">
@@ -25,9 +26,11 @@
       </div>
       <button id="reset-btn" class="btn btn-ghost btn-sm" type="button">Reset session</button>
     </header>
+    <div id="vars-panel" class="vars-panel" hidden></div>
     <main id="doc" class="doc"></main>
   </div>
 </div>
+<script src="session.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

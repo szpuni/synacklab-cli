@@ -134,7 +134,7 @@ func executeNonInteractive(ctx context.Context, doc *runbook.Document, sets map[
 		logger.Info("running step %q", step.Name)
 
 		timeout := runbook.EffectiveTimeout(step, doc.Frontmatter.DefaultTimeout)
-		_, events, err := engine.Run(ctx, step, inputs, timeout, store)
+		_, events, _, err := engine.Run(ctx, step, inputs, timeout, store)
 		if err != nil {
 			logger.Error("step %q: %s", step.Name, err)
 			return fmt.Errorf("step %q: %w", step.Name, err)

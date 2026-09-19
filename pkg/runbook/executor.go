@@ -30,9 +30,12 @@ func EffectiveTimeout(step *Step, docDefault time.Duration) time.Duration {
 	return DefaultTimeout
 }
 
-// Engine runs a single Step in its own process and streams its output.
+// Engine runs a single Step in its own process and streams its output. The
+// returned context.CancelFunc lets a caller stop this specific execution
+// (its process group is killed the same way a timeout kills it) without
+// waiting for the step's configured timeout to elapse.
 type Engine interface {
-	Run(ctx context.Context, step *Step, inputs map[string]string, timeout time.Duration, store SessionStore) (*Execution, <-chan Event, error)
+	Run(ctx context.Context, step *Step, inputs map[string]string, timeout time.Duration, store SessionStore) (*Execution, <-chan Event, context.CancelFunc, error)
 }
 
 // ProcessEngine spawns exactly one bash/python3 process per Run call. No
@@ -48,18 +51,18 @@ func NewEngine(logWriter LogWriter) Engine {
 	return &ProcessEngine{logWriter: logWriter}
 }
 
-func (e *ProcessEngine) Run(ctx context.Context, step *Step, inputs map[string]string, timeout time.Duration, store SessionStore) (*Execution, <-chan Event, error) {
+func (e *ProcessEngine) Run(ctx context.Context, step *Step, inputs map[string]string, timeout time.Duration, store SessionStore) (*Execution, <-chan Event, context.CancelFunc, error) {
 	sess := store.Get()
 
 	src, err := Substitute(step.Source, sess)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	wrapped := src + buildTrailer(step.Lang, step.Capture, step.SetCwd)
 
 	binary, ok := interpreterFor(step.Lang)
 	if !ok {
-		return nil, nil, &Error{Type: ErrorTypeExecution, Message: fmt.Sprintf("unsupported language %q", step.Lang)}
+		return nil, nil, nil, &Error{Type: ErrorTypeExecution, Message: fmt.Sprintf("unsupported language %q", step.Lang)}
 	}
 
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -76,25 +79,25 @@ func (e *ProcessEngine) Run(ctx context.Context, step *Step, inputs map[string]s
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
-		return nil, nil, &Error{Type: ErrorTypeExecution, Message: "failed to open stdout pipe", Cause: err}
+		return nil, nil, nil, &Error{Type: ErrorTypeExecution, Message: "failed to open stdout pipe", Cause: err}
 	}
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
 		cancel()
-		return nil, nil, &Error{Type: ErrorTypeExecution, Message: "failed to open stderr pipe", Cause: err}
+		return nil, nil, nil, &Error{Type: ErrorTypeExecution, Message: "failed to open stderr pipe", Cause: err}
 	}
 
 	execution := &Execution{StepName: step.Name, Started: time.Now()}
 
 	if err := cmd.Start(); err != nil {
 		cancel()
-		return nil, nil, &Error{Type: ErrorTypeExecution, Message: "failed to start process", Cause: err}
+		return nil, nil, nil, &Error{Type: ErrorTypeExecution, Message: "failed to start process", Cause: err}
 	}
 
 	events := make(chan Event, 32)
 	go e.wait(runCtx, cancel, cmd, stdoutPipe, stderrPipe, step, store, execution, events)
 
-	return execution, events, nil
+	return execution, events, cancel, nil
 }
 
 func (e *ProcessEngine) wait(
@@ -130,6 +133,7 @@ func (e *ProcessEngine) wait(
 
 	execution.Duration = time.Since(execution.Started)
 	execution.TimedOut = errors.Is(runCtx.Err(), context.DeadlineExceeded)
+	execution.Canceled = !execution.TimedOut && errors.Is(runCtx.Err(), context.Canceled)
 	execution.Stdout = rawStdout.String()
 	execution.Stderr = rawStderr.String()
 	execution.Captured = captured
@@ -157,6 +161,7 @@ func (e *ProcessEngine) wait(
 		ExitCode: execution.ExitCode,
 		Duration: execution.Duration,
 		TimedOut: execution.TimedOut,
+		Canceled: execution.Canceled,
 		Captured: captured,
 	}
 }

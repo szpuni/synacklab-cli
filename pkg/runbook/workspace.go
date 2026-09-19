@@ -2,6 +2,7 @@ package runbook
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -101,7 +102,8 @@ func (s *Server) handleGetFiles(w http.ResponseWriter, _ *http.Request) {
 }
 
 type openRequest struct {
-	File string `json:"file"`
+	File  string `json:"file"`
+	Force bool   `json:"force"`
 }
 
 func (s *Server) handlePostOpen(w http.ResponseWriter, r *http.Request) {
@@ -124,6 +126,33 @@ func (s *Server) handlePostOpen(w http.ResponseWriter, r *http.Request) {
 	if !isWithinRoot(s.root, absPath) {
 		s.writeError(w, http.StatusBadRequest, "invalid file path")
 		return
+	}
+
+	// Refusing a switch while a step is running takes precedence over the
+	// vars/history confirmation check below: canceling or waiting out that
+	// execution is a precondition, not something force should paper over
+	// (Requirement 6.4).
+	if running, ok := s.registry.runningInfo(); ok {
+		s.writeError(w, http.StatusConflict, fmt.Sprintf(
+			"step %q is still running (execution %s); cancel or wait for it before switching runbooks", running.stepName, running.id))
+		return
+	}
+
+	activeDocument, activeStore := s.active.get()
+	if activeDocument != nil && activeDocument.Path == absPath {
+		relPath := relativeToRoot(s.root, absPath)
+		s.writeJSON(w, http.StatusOK, map[string]any{"opened": relPath, "unchanged": true})
+		return
+	}
+
+	if activeStore != nil {
+		sess := activeStore.Get()
+		if !req.Force && (len(sess.Vars) > 0 || len(sess.History) > 0) {
+			msg := "switching runbooks will discard the current session's captured variables and history"
+			s.logger.Warn("%s", msg)
+			s.writeJSON(w, http.StatusConflict, map[string]any{"error": msg, "requires_confirmation": true})
+			return
+		}
 	}
 
 	info, err := os.Stat(absPath)

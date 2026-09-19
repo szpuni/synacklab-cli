@@ -111,9 +111,11 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/doc", s.handleGetDoc)
 	mux.HandleFunc("GET /api/session", s.handleGetSession)
+	mux.HandleFunc("GET /api/logs", s.handleGetLog)
 	mux.HandleFunc("POST /api/session/reset", s.handlePostSessionReset)
 	mux.HandleFunc("POST /api/steps/{name}/run", s.handlePostStepRun)
 	mux.HandleFunc("GET /ws/executions/{id}", s.handleWSExecution)
+	mux.HandleFunc("POST /api/executions/{id}/cancel", s.handleCancelExecution)
 	mux.HandleFunc("GET /api/files", s.handleGetFiles)
 	mux.HandleFunc("POST /api/open", s.handlePostOpen)
 	mux.Handle("GET /", http.FileServer(webRoot()))
@@ -155,12 +157,26 @@ func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // executionRecord buffers a running/completed execution's events and fans
 // them out to subscribers (WebSocket connections), so a client that
 // connects late — or after a fast execution already finished — still gets
-// the full event history replayed before any live events.
+// the full event history replayed before any live events. cancel stops the
+// specific execution this record tracks (Requirement 4.4).
 type executionRecord struct {
 	mu          sync.Mutex
 	events      []Event
 	subscribers []chan Event
 	done        chan struct{}
+	cancel      context.CancelFunc
+}
+
+// isDone reports whether this execution's terminal event has already been
+// published, without blocking — used by the cancel endpoint to treat
+// canceling an already-finished execution as a no-op (Requirement 4.6).
+func (r *executionRecord) isDone() bool {
+	select {
+	case <-r.done:
+		return true
+	default:
+		return false
+	}
 }
 
 // subscribe registers a new listener and returns the events already
@@ -187,22 +203,59 @@ func (r *executionRecord) publish(ev Event) {
 	}
 }
 
+// runningExecution identifies the single execution currently permitted to be
+// in flight (Requirement 6).
+type runningExecution struct {
+	id       string
+	stepName string
+}
+
 type executionRegistry struct {
 	mu      sync.Mutex
 	entries map[string]*executionRecord
+	running *runningExecution
 }
 
 func newExecutionRegistry() *executionRegistry {
 	return &executionRegistry{entries: map[string]*executionRecord{}}
 }
 
-// start records a new execution under a fresh id and drains its event
-// channel into the record in the background, logging its lifecycle so a
-// running `serve` process's console shows what's happening even though
-// execution itself is triggered from the browser.
-func (r *executionRegistry) start(stepName string, events <-chan Event, logger *rblog.Logger) string {
-	id := NewID()
-	rec := &executionRecord{done: make(chan struct{})}
+// tryReserve atomically claims the single in-flight execution slot for id/
+// stepName. It fails (ok=false) if another execution is already running,
+// returning that execution so the caller can report it (409 Conflict).
+func (r *executionRegistry) tryReserve(id, stepName string) (running *runningExecution, ok bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.running != nil {
+		return r.running, false
+	}
+	r.running = &runningExecution{id: id, stepName: stepName}
+	return nil, true
+}
+
+// releaseReservation clears a reservation made by tryReserve without ever
+// calling start — used when starting the underlying process itself fails.
+func (r *executionRegistry) releaseReservation(id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.running != nil && r.running.id == id {
+		r.running = nil
+	}
+}
+
+// runningInfo reports the currently in-flight execution, if any.
+func (r *executionRegistry) runningInfo() (*runningExecution, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.running, r.running != nil
+}
+
+// start records a new execution under id (already reserved via tryReserve)
+// and drains its event channel into the record in the background, logging
+// its lifecycle so a running `serve` process's console shows what's
+// happening even though execution itself is triggered from the browser.
+func (r *executionRegistry) start(id, stepName string, cancel context.CancelFunc, events <-chan Event, logger *rblog.Logger) {
+	rec := &executionRecord{done: make(chan struct{}), cancel: cancel}
 
 	r.mu.Lock()
 	r.entries[id] = rec
@@ -220,6 +273,8 @@ func (r *executionRegistry) start(stepName string, events <-chan Event, logger *
 			// (a caller, or a test) never observes completion before the
 			// corresponding log line has actually been written.
 			switch {
+			case ev.Canceled:
+				logger.Warn("step %q canceled (execution %s, duration=%s)", stepName, id, ev.Duration)
 			case ev.TimedOut:
 				logger.Warn("step %q timed out (execution %s, duration=%s)", stepName, id, ev.Duration)
 			case ev.ExitCode != 0:
@@ -228,10 +283,13 @@ func (r *executionRegistry) start(stepName string, events <-chan Event, logger *
 				logger.Info("step %q finished (execution %s, duration=%s)", stepName, id, ev.Duration)
 			}
 			close(rec.done)
+			r.mu.Lock()
+			if r.running != nil && r.running.id == id {
+				r.running = nil
+			}
+			r.mu.Unlock()
 		}
 	}()
-
-	return id
 }
 
 func (r *executionRegistry) get(id string) (*executionRecord, bool) {

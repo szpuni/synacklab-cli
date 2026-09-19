@@ -1,0 +1,125 @@
+/* steps.css: step-card component styles, split out of app.css to keep that
+   file under the repo's 500-line ceiling. Relies on the design tokens
+   (:root custom properties) defined in app.css, loaded before this file. */
+
+/* ── Step cards ──────────────────────────────────────────────────────── */
+.step {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  margin: 20px 0;
+  padding: 18px 20px;
+  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.step:hover { box-shadow: var(--shadow-md); border-color: var(--border-default); }
+
+.step-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.step-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent-600);
+}
+
+.step pre.source {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  margin: 0 0 12px;
+}
+
+.inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.field { display: flex; flex-direction: column; gap: 4px; }
+
+.field-input-row { display: flex; align-items: center; gap: 4px; }
+
+.field-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.field-input {
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  padding: 7px 10px;
+  min-width: 160px;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: var(--accent-500);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.confirm-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--warning-700);
+  border: 1px solid rgba(202, 138, 4, 0.25);
+  color: var(--warning-500);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  font-size: 12.5px;
+}
+
+.step-actions { display: flex; align-items: center; gap: 10px; }
+
+.output {
+  background: #0b0e14;
+  color: #e2e8f0;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  min-height: 1.6em;
+  max-height: 320px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  margin-top: 12px;
+}
+
+.output .stderr-line { color: #fca5a5; }
+.output .status-line { color: #7dd3fc; margin-top: 6px; }

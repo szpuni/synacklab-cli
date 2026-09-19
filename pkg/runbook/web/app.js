@@ -3,8 +3,33 @@ const cwdEl = document.getElementById("cwd");
 const activeFileEl = document.getElementById("active-file");
 const fileTreeEl = document.getElementById("file-tree");
 const sidebarEl = document.getElementById("sidebar");
+const resetBtn = document.getElementById("reset-btn");
 
 let activeFile = null;
+let runButtons = [];
+
+// createConfirmGate is the single arm-then-confirm state machine shared by
+// every destructive control (per-step Run buttons that require confirmation,
+// and the reset-session button): the first click arms it (relabeling the
+// button) and the second click fires onConfirmed. reset() forces it back to
+// unarmed, used whenever the pending action completes or fails to start.
+function createConfirmGate(button, { armLabel, baseLabel, onConfirmed }) {
+  let armed = false;
+  return {
+    handleClick() {
+      if (!armed) {
+        armed = true;
+        button.textContent = armLabel;
+        return;
+      }
+      onConfirmed();
+    },
+    reset() {
+      armed = false;
+      button.textContent = baseLabel;
+    },
+  };
+}
 
 async function loadFiles() {
   const res = await fetch("/api/files");
@@ -61,14 +86,25 @@ function highlightActiveFile() {
   }
 }
 
-async function openFile(path) {
+async function openFile(path, force = false) {
   const res = await fetch("/api/open", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ file: path }),
+    body: JSON.stringify({ file: path, force }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
+    if (res.status === 409 && body.requires_confirmation) {
+      const varsCount = lastDoc && lastDoc.session ? Object.keys(lastDoc.session.vars || {}).length : 0;
+      const historyCount = lastDoc && lastDoc.session ? (lastDoc.session.history || []).length : 0;
+      const proceed = confirm(
+        `Switching runbooks will discard ${varsCount} captured variable(s) and ${historyCount} run(s) of history for the current session. Continue?`
+      );
+      if (proceed) {
+        await openFile(path, true);
+      }
+      return;
+    }
     alert(`Failed to open ${path}: ${body.error || res.statusText}`);
     return;
   }
@@ -85,16 +121,26 @@ async function loadDoc() {
 async function refreshSession() {
   const res = await fetch("/api/session");
   const session = await res.json();
+  if (lastDoc) {
+    lastDoc.session = session;
+  }
   cwdEl.textContent = session.cwd;
+  renderVarsPanel(session.vars);
+  for (const el of docEl.querySelectorAll(".step")) {
+    updateStepLastRun(el, session.history);
+  }
 }
 
 function renderDoc(doc) {
   docEl.innerHTML = "";
+  runButtons = [];
+  lastDoc = doc;
 
   if (!doc.active) {
     activeFile = null;
     activeFileEl.textContent = "Select a runbook";
     cwdEl.textContent = "";
+    varsPanelEl.hidden = true;
     docEl.appendChild(renderEmptyState());
     highlightActiveFile();
     return;
@@ -103,12 +149,13 @@ function renderDoc(doc) {
   activeFile = doc.active_file || null;
   activeFileEl.textContent = activeFile || "Runbook";
   cwdEl.textContent = doc.session.cwd;
+  renderVarsPanel(doc.session.vars);
   highlightActiveFile();
 
   const inner = document.createElement("div");
   inner.className = "doc-inner";
   for (const block of doc.blocks) {
-    inner.appendChild(block.kind === "step" ? renderStep(block.step) : renderProse(block.prose));
+    inner.appendChild(block.kind === "step" ? renderStep(block.step, doc.session.history) : renderProse(block.prose));
   }
   docEl.appendChild(inner);
 }
@@ -127,9 +174,10 @@ function renderProse(html) {
   return div;
 }
 
-function renderStep(step) {
+function renderStep(step, history) {
   const card = document.createElement("section");
   card.className = "step";
+  card.dataset.stepName = step.name;
 
   const header = document.createElement("div");
   header.className = "step-header";
@@ -141,11 +189,14 @@ function renderStep(step) {
   source.textContent = step.source;
   card.appendChild(source);
 
+  card.appendChild(renderLastRun(step.name, history));
+
   const inputEls = {};
   if (step.input && step.input.length) {
     const inputsDiv = document.createElement("div");
     inputsDiv.className = "inputs";
     for (const name of step.input) {
+      const isSensitive = !!(step.sensitive && step.sensitive.includes(name));
       const field = document.createElement("div");
       field.className = "field";
       const label = document.createElement("label");
@@ -153,10 +204,26 @@ function renderStep(step) {
       label.textContent = name;
       const input = document.createElement("input");
       input.className = "field-input";
-      input.type = "text";
+      input.type = isSensitive ? "password" : "text";
+      if (isSensitive) input.autocomplete = "off";
       inputEls[name] = input;
       field.appendChild(label);
-      field.appendChild(input);
+
+      const inputRow = document.createElement("div");
+      inputRow.className = "field-input-row";
+      inputRow.appendChild(input);
+      if (isSensitive) {
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "reveal-toggle";
+        toggle.title = "Reveal value";
+        toggle.textContent = "👁";
+        toggle.addEventListener("click", () => {
+          input.type = input.type === "password" ? "text" : "password";
+        });
+        inputRow.appendChild(toggle);
+      }
+      field.appendChild(inputRow);
       inputsDiv.appendChild(field);
     }
     card.appendChild(inputsDiv);
@@ -176,6 +243,15 @@ function renderStep(step) {
   runBtn.className = `btn btn-md ${step.requires_confirm ? "btn-danger" : "btn-primary"}`;
   runBtn.textContent = "Run";
   actions.appendChild(runBtn);
+  runButtons.push(runBtn);
+
+  const stopBtn = document.createElement("button");
+  stopBtn.type = "button";
+  stopBtn.className = "btn btn-ghost btn-sm";
+  stopBtn.textContent = "Stop";
+  stopBtn.hidden = true;
+  actions.appendChild(stopBtn);
+
   card.appendChild(actions);
 
   const output = document.createElement("div");
@@ -183,20 +259,43 @@ function renderStep(step) {
   output.hidden = true;
   card.appendChild(output);
 
-  let confirmed = !step.requires_confirm;
+  const execState = { id: null };
+  stopBtn.addEventListener("click", () => {
+    if (execState.id) void fetch(`/api/executions/${execState.id}/cancel`, { method: "POST" });
+  });
+
+  const gate = step.requires_confirm
+    ? createConfirmGate(runBtn, {
+        armLabel: "Confirm & Run",
+        baseLabel: "Run",
+        onConfirmed: () => void runStep(step, inputEls, runBtn, stopBtn, output, execState, gate),
+      })
+    : null;
+
   runBtn.addEventListener("click", () => {
-    if (step.requires_confirm && !confirmed) {
-      confirmed = true;
-      runBtn.textContent = "Confirm & Run";
-      return;
+    if (gate) {
+      gate.handleClick();
+    } else {
+      void runStep(step, inputEls, runBtn, stopBtn, output, execState, gate);
     }
-    void runStep(step, inputEls, runBtn, output);
   });
 
   return card;
 }
 
-async function runStep(step, inputEls, runBtn, output) {
+// setOthersDisabled implements Requirement 6.3: while one step's execution
+// is in flight, every other step's Run control and the reset control are
+// disabled too, mirroring the server-enforced single-in-flight guard before
+// a rejected request would otherwise have to round-trip to discover it.
+function setOthersDisabled(disabled, runningBtn) {
+  for (const btn of runButtons) {
+    if (btn === runningBtn) continue;
+    btn.disabled = disabled;
+  }
+  resetBtn.disabled = disabled;
+}
+
+async function runStep(step, inputEls, runBtn, stopBtn, output, execState, gate) {
   const inputs = {};
   for (const [name, el] of Object.entries(inputEls)) {
     if (!el.value) {
@@ -207,6 +306,7 @@ async function runStep(step, inputEls, runBtn, output) {
   }
 
   runBtn.disabled = true;
+  setOthersDisabled(true, runBtn);
   output.hidden = false;
   output.textContent = "";
 
@@ -220,19 +320,25 @@ async function runStep(step, inputEls, runBtn, output) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     output.textContent = `error: ${body.error || res.statusText}`;
     runBtn.disabled = false;
+    setOthersDisabled(false, runBtn);
+    gate?.reset();
     return;
   }
 
   const { execution_id } = await res.json();
-  streamExecution(execution_id, output, runBtn);
+  execState.id = execution_id;
+  stopBtn.hidden = false;
+  streamExecution(execution_id, output, runBtn, stopBtn, execState, gate);
 }
 
-function streamExecution(executionID, output, runBtn) {
+function streamExecution(executionID, output, runBtn, stopBtn, execState, gate) {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(`${proto}//${location.host}/ws/executions/${executionID}`);
 
   ws.onmessage = (msg) => {
     const ev = JSON.parse(msg.data);
+    const pinned = output.scrollTop + output.clientHeight >= output.scrollHeight - 4;
+
     const line = document.createElement("div");
     if (ev.type === "stdout") {
       line.textContent = ev.data;
@@ -241,17 +347,30 @@ function streamExecution(executionID, output, runBtn) {
       line.className = "stderr-line";
     } else if (ev.type === "done") {
       line.className = "status-line";
-      line.textContent = ev.timed_out
-        ? "timed out"
-        : `exit code ${ev.exit_code} (${ev.duration_ms}ms)`;
+      if (ev.canceled) {
+        line.textContent = "canceled";
+      } else if (ev.timed_out) {
+        line.textContent = "timed out";
+      } else {
+        line.textContent = `exit code ${ev.exit_code} (${ev.duration_ms}ms)`;
+      }
       runBtn.disabled = false;
+      stopBtn.hidden = true;
+      execState.id = null;
+      setOthersDisabled(false, runBtn);
+      gate?.reset();
       void refreshSession();
     }
     output.appendChild(line);
+    if (pinned) output.scrollTop = output.scrollHeight;
   };
 
   ws.onerror = () => {
     runBtn.disabled = false;
+    stopBtn.hidden = true;
+    execState.id = null;
+    setOthersDisabled(false, runBtn);
+    gate?.reset();
   };
 }
 
@@ -259,10 +378,16 @@ function escapeHTML(s) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-document.getElementById("reset-btn").addEventListener("click", async () => {
-  await fetch("/api/session/reset", { method: "POST" });
-  await loadDoc();
+const resetGate = createConfirmGate(resetBtn, {
+  armLabel: "Confirm reset",
+  baseLabel: "Reset session",
+  onConfirmed: async () => {
+    await fetch("/api/session/reset", { method: "POST" });
+    await loadDoc();
+    resetGate.reset();
+  },
 });
+resetBtn.addEventListener("click", () => resetGate.handleClick());
 
 document.getElementById("sidebar-toggle").addEventListener("click", () => {
   sidebarEl.classList.toggle("open");

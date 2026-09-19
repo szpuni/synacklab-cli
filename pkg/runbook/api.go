@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/yuin/goldmark"
 )
@@ -22,6 +25,7 @@ type stepView struct {
 	Source          string   `json:"source"`
 	Input           []string `json:"input,omitempty"`
 	Capture         []string `json:"capture,omitempty"`
+	Sensitive       []string `json:"sensitive,omitempty"`
 	Confirm         bool     `json:"confirm"`
 	Cwd             string   `json:"cwd,omitempty"`
 	SetCwd          bool     `json:"set_cwd"`
@@ -37,6 +41,7 @@ type sessionView struct {
 
 type execHistoryView struct {
 	StepName   string            `json:"step_name"`
+	StartedAt  time.Time         `json:"started_at"`
 	ExitCode   int               `json:"exit_code"`
 	DurationMS int64             `json:"duration_ms"`
 	TimedOut   bool              `json:"timed_out"`
@@ -49,6 +54,7 @@ func toSessionView(sess *Session) sessionView {
 	for i, e := range sess.History {
 		history[i] = execHistoryView{
 			StepName:   e.StepName,
+			StartedAt:  e.Started,
 			ExitCode:   e.ExitCode,
 			DurationMS: e.Duration.Milliseconds(),
 			TimedOut:   e.TimedOut,
@@ -76,7 +82,7 @@ func (s *Server) handleGetDoc(w http.ResponseWriter, _ *http.Request) {
 			requiresConfirm, reason := RequiresConfirmation(b.Step, doc.Frontmatter.DangerPatterns)
 			bv.Step = &stepView{
 				Name: b.Step.Name, Lang: b.Step.Lang, Source: b.Step.Source,
-				Input: b.Step.Input, Capture: b.Step.Capture, Confirm: b.Step.Confirm,
+				Input: b.Step.Input, Capture: b.Step.Capture, Sensitive: b.Step.Sensitive, Confirm: b.Step.Confirm,
 				Cwd: b.Step.Cwd, SetCwd: b.Step.SetCwd,
 				RequiresConfirm: requiresConfirm, ConfirmReason: reason,
 			}
@@ -110,6 +116,46 @@ func (s *Server) handleGetSession(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	s.writeJSON(w, http.StatusOK, toSessionView(store.Get()))
+}
+
+// handleGetLog serves the contents of a step execution's on-disk log to the
+// browser. path must exactly match one of the active session's own
+// History[].LogPath values — this is what keeps the endpoint from being
+// usable as an arbitrary local file reader even if path is
+// attacker-influenced (Requirement 2.3).
+func (s *Server) handleGetLog(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		s.writeError(w, http.StatusBadRequest, "missing path query parameter")
+		return
+	}
+
+	_, store := s.active.get()
+	if store == nil {
+		s.writeError(w, http.StatusNotFound, "no active session")
+		return
+	}
+
+	found := false
+	for _, e := range store.Get().History {
+		if e.LogPath == path {
+			found = true
+			break
+		}
+	}
+	if !found {
+		s.writeError(w, http.StatusNotFound, "log not found in the current session's history")
+		return
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "failed to read log: "+err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
 }
 
 func (s *Server) handlePostSessionReset(w http.ResponseWriter, _ *http.Request) {
@@ -156,8 +202,19 @@ func (s *Server) handlePostStepRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if running, ok := s.registry.runningInfo(); ok {
+		s.writeError(w, http.StatusConflict, fmt.Sprintf("step %q is still running (execution %s)", running.stepName, running.id))
+		return
+	}
+
 	if err := CheckConfirmation(step, doc.Frontmatter.DangerPatterns, req.Confirmed); err != nil {
 		s.writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	id := NewID()
+	if running, ok := s.registry.tryReserve(id, step.Name); !ok {
+		s.writeError(w, http.StatusConflict, fmt.Sprintf("step %q is still running (execution %s)", running.stepName, running.id))
 		return
 	}
 
@@ -165,13 +222,14 @@ func (s *Server) handlePostStepRun(w http.ResponseWriter, r *http.Request) {
 	// handler returns the execution_id) but still tied to the server's own
 	// baseCtx, so a shutdown can still cancel an in-flight execution.
 	timeout := EffectiveTimeout(step, doc.Frontmatter.DefaultTimeout)
-	_, events, err := s.engine.Run(s.baseCtx, step, req.Inputs, timeout, store)
+	_, events, cancel, err := s.engine.Run(s.baseCtx, step, req.Inputs, timeout, store)
 	if err != nil {
+		s.registry.releaseReservation(id)
 		s.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	id := s.registry.start(step.Name, events, s.logger)
+	s.registry.start(id, step.Name, cancel, events, s.logger)
 	s.writeJSON(w, http.StatusAccepted, map[string]string{"execution_id": id})
 }
 

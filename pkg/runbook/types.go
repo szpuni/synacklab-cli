@@ -18,15 +18,16 @@ type Block struct {
 
 // Step is a fenced bash/python code block and its parsed fence attributes.
 type Step struct {
-	Name    string
-	Lang    string
-	Source  string
-	Input   []string
-	Capture []string
-	Confirm bool
-	Cwd     string
-	SetCwd  bool
-	Timeout time.Duration
+	Name      string
+	Lang      string
+	Source    string
+	Input     []string
+	Capture   []string
+	Sensitive []string
+	Confirm   bool
+	Cwd       string
+	SetCwd    bool
+	Timeout   time.Duration
 }
 
 // Frontmatter is the document-level YAML config block (project-brief.md §5.2).
@@ -63,6 +64,7 @@ type Execution struct {
 	Duration time.Duration
 	ExitCode int
 	TimedOut bool
+	Canceled bool
 	LogPath  string
 	Stdout   string
 	Stderr   string
@@ -76,5 +78,6 @@ type Event struct {
 	ExitCode int
 	Duration time.Duration
 	TimedOut bool
+	Canceled bool
 	Captured map[string]string
 }

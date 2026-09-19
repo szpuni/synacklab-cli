@@ -28,6 +28,14 @@ func TestFormatDocument_LeavesProseCodeAndValuesUnchanged(t *testing.T) {
 	assert.Contains(t, got, "capture=B,A", "attribute VALUES must not be reordered/reformatted, only key order/spacing")
 }
 
+func TestFormatDocument_CanonicalizesSensitiveAfterCapture(t *testing.T) {
+	src := "```bash {sensitive=A, input=A,B, timeout=30s, name=x}\necho hi\n```\n"
+
+	out, err := FormatDocument([]byte(src))
+	require.NoError(t, err)
+	assert.Equal(t, "```bash {name=x, input=A,B, sensitive=A, timeout=30s}\necho hi\n```\n", string(out))
+}
+
 func TestFormatDocument_NoAttributesStaysBare(t *testing.T) {
 	src := "```bash\necho hi\n```\n"
 

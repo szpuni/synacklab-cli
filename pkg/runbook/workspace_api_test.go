@@ -165,6 +165,128 @@ func TestHandlePostStepRun_NoActiveDocumentReturnsConflict(t *testing.T) {
 	assert.Equal(t, http.StatusConflict, rec.Code)
 }
 
+func TestHandlePostOpen_ReopeningActiveFileIsNoOpAndKeepsSession(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "deploy.md"), []byte("```bash {name=hello}\necho hi\n```\n"), 0o644))
+	srv := newWorkspaceServer(t, root)
+
+	body, _ := json.Marshal(map[string]string{"file": "deploy.md"})
+	req := httptest.NewRequest(http.MethodPost, "/api/open", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	activeStore(srv).SetVar("A", "1")
+
+	req2 := httptest.NewRequest(http.MethodPost, "/api/open", bytes.NewReader(body))
+	rec2 := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec2, req2)
+	require.Equal(t, http.StatusOK, rec2.Code)
+
+	var got struct {
+		Unchanged bool `json:"unchanged"`
+	}
+	require.NoError(t, json.Unmarshal(rec2.Body.Bytes(), &got))
+	assert.True(t, got.Unchanged)
+	assert.Equal(t, "1", activeStore(srv).Get().Vars["A"])
+}
+
+func TestHandlePostOpen_SwitchingAwayFromNonEmptySessionRequiresForce(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "a.md"), []byte("```bash {name=hello}\necho hi\n```\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "b.md"), []byte("```bash {name=hello}\necho hi\n```\n"), 0o644))
+	srv := newWorkspaceServer(t, root)
+
+	body, _ := json.Marshal(map[string]string{"file": "a.md"})
+	req := httptest.NewRequest(http.MethodPost, "/api/open", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	activeStore(srv).SetVar("A", "1")
+
+	switchBody, _ := json.Marshal(map[string]string{"file": "b.md"})
+	req2 := httptest.NewRequest(http.MethodPost, "/api/open", bytes.NewReader(switchBody))
+	rec2 := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec2, req2)
+
+	require.Equal(t, http.StatusConflict, rec2.Code)
+	var got struct {
+		RequiresConfirmation bool `json:"requires_confirmation"`
+	}
+	require.NoError(t, json.Unmarshal(rec2.Body.Bytes(), &got))
+	assert.True(t, got.RequiresConfirmation)
+	assert.Equal(t, "1", activeStore(srv).Get().Vars["A"], "session must not be discarded without confirmation")
+}
+
+func TestHandlePostOpen_ForceSwitchesAndReplacesSession(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "a.md"), []byte("```bash {name=hello}\necho hi\n```\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "b.md"), []byte("```bash {name=hello}\necho hi\n```\n"), 0o644))
+	srv := newWorkspaceServer(t, root)
+
+	body, _ := json.Marshal(map[string]string{"file": "a.md"})
+	req := httptest.NewRequest(http.MethodPost, "/api/open", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	activeStore(srv).SetVar("A", "1")
+
+	switchBody, _ := json.Marshal(map[string]any{"file": "b.md", "force": true})
+	req2 := httptest.NewRequest(http.MethodPost, "/api/open", bytes.NewReader(switchBody))
+	rec2 := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec2, req2)
+
+	require.Equal(t, http.StatusOK, rec2.Code)
+	assert.Empty(t, activeStore(srv).Get().Vars)
+}
+
+func TestHandlePostOpen_SwitchingAwayFromEmptySessionNeedsNoConfirmation(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "a.md"), []byte("```bash {name=hello}\necho hi\n```\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "b.md"), []byte("```bash {name=hello}\necho hi\n```\n"), 0o644))
+	srv := newWorkspaceServer(t, root)
+
+	body, _ := json.Marshal(map[string]string{"file": "a.md"})
+	req := httptest.NewRequest(http.MethodPost, "/api/open", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	switchBody, _ := json.Marshal(map[string]string{"file": "b.md"})
+	req2 := httptest.NewRequest(http.MethodPost, "/api/open", bytes.NewReader(switchBody))
+	rec2 := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec2, req2)
+
+	assert.Equal(t, http.StatusOK, rec2.Code)
+}
+
+func TestHandlePostOpen_RefusesSwitchWhileExecutionInFlightRegardlessOfForce(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "a.md"), []byte("```bash {name=slow}\nsleep 5\n```\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "b.md"), []byte("```bash {name=hello}\necho hi\n```\n"), 0o644))
+	srv := newWorkspaceServer(t, root)
+
+	body, _ := json.Marshal(map[string]string{"file": "a.md"})
+	req := httptest.NewRequest(http.MethodPost, "/api/open", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	runReq := httptest.NewRequest(http.MethodPost, "/api/steps/slow/run", bytes.NewReader([]byte(`{}`)))
+	runRec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(runRec, runReq)
+	require.Equal(t, http.StatusAccepted, runRec.Code)
+
+	switchBody, _ := json.Marshal(map[string]any{"file": "b.md", "force": true})
+	req2 := httptest.NewRequest(http.MethodPost, "/api/open", bytes.NewReader(switchBody))
+	rec2 := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec2, req2)
+
+	assert.Equal(t, http.StatusConflict, rec2.Code)
+}
+
 func TestHandleGetDoc_IncludesActiveFileAfterOpen(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "sub"), 0o755))
