@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -809,10 +810,16 @@ func TestRateLimiterLoadScenarios(t *testing.T) {
 		var wg sync.WaitGroup
 		results := make(chan struct {
 			workerID int
-			acquired time.Time
-			released time.Time
 			waitTime time.Duration
 		}, numWorkers)
+
+		// concurrent/maxConcurrent count actual slot-holders directly, rather than
+		// reconstructing overlap from wall-clock timestamps taken just after the
+		// Acquire/Release calls return: on a loaded CI runner, scheduling jitter
+		// between a release and its timestamp can make two non-overlapping holds
+		// look concurrent, flaking this test even though the semaphore (a
+		// capacity-limited buffered channel) can never actually exceed the limit.
+		var concurrent, maxConcurrent atomic.Int32
 
 		start := time.Now()
 
@@ -827,26 +834,31 @@ func TestRateLimiterLoadScenarios(t *testing.T) {
 
 				acquireStart := time.Now()
 				err := limiter.AcquireSlot(ctx)
-				acquired := time.Now()
-				waitTime := acquired.Sub(acquireStart)
+				waitTime := time.Since(acquireStart)
 
 				if err != nil {
 					t.Errorf("Worker %d failed to acquire slot: %v", workerID, err)
 					return
 				}
 
+				cur := concurrent.Add(1)
+				for {
+					prevMax := maxConcurrent.Load()
+					if cur <= prevMax || maxConcurrent.CompareAndSwap(prevMax, cur) {
+						break
+					}
+				}
+
 				// Hold the slot for some work
 				time.Sleep(workDuration)
 
+				concurrent.Add(-1)
 				limiter.ReleaseSlot()
-				released := time.Now()
 
 				results <- struct {
 					workerID int
-					acquired time.Time
-					released time.Time
 					waitTime time.Duration
-				}{workerID, acquired, released, waitTime}
+				}{workerID, waitTime}
 			}(i)
 		}
 
@@ -857,13 +869,9 @@ func TestRateLimiterLoadScenarios(t *testing.T) {
 
 		// Analyze results
 		var waitTimes []time.Duration
-		var acquisitionTimes []time.Time
-		var releaseTimes []time.Time
 
 		for result := range results {
 			waitTimes = append(waitTimes, result.waitTime)
-			acquisitionTimes = append(acquisitionTimes, result.acquired)
-			releaseTimes = append(releaseTimes, result.released)
 		}
 
 		assert.Equal(t, numWorkers, len(waitTimes), "All workers should complete")
@@ -879,27 +887,13 @@ func TestRateLimiterLoadScenarios(t *testing.T) {
 		t.Logf("Workers that had to wait: %d out of %d", workersWithWait, numWorkers)
 
 		// Verify concurrency was respected
-		maxConcurrent := 0
-		for _, acqTime := range acquisitionTimes {
-			concurrent := 0
-			for j, relTime := range releaseTimes {
-				if acquisitionTimes[j].Before(acqTime) || acquisitionTimes[j].Equal(acqTime) {
-					if relTime.After(acqTime) {
-						concurrent++
-					}
-				}
-			}
-			if concurrent > maxConcurrent {
-				maxConcurrent = concurrent
-			}
-		}
-		assert.LessOrEqual(t, maxConcurrent, config.ConcurrencyLimit, "Should not exceed concurrency limit")
+		assert.LessOrEqual(t, int(maxConcurrent.Load()), config.ConcurrencyLimit, "Should not exceed concurrency limit")
 
 		stats := limiter.GetStats()
 		assert.Equal(t, 0, stats.ConcurrentSlots, "All slots should be released")
 
 		t.Logf("Processed %d workers in %v with max concurrent: %d, workers with wait: %d",
-			numWorkers, totalDuration, maxConcurrent, workersWithWait)
+			numWorkers, totalDuration, maxConcurrent.Load(), workersWithWait)
 	})
 
 	t.Run("mixed load patterns with dynamic rate limit updates", func(t *testing.T) {
