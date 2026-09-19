@@ -114,6 +114,32 @@ func TestParse_DuplicateExplicitNamesIsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "dup")
 }
 
+func TestParse_SensitiveAttributeParsedIntoStep(t *testing.T) {
+	src := []byte("```bash {input=A,B, sensitive=A}\necho hi\n```\n")
+
+	doc, err := (&GoldmarkParser{}).Parse(src, "/tmp/runbook.md")
+	require.NoError(t, err)
+	require.Len(t, doc.Blocks, 1)
+	assert.Equal(t, []string{"A"}, doc.Blocks[0].Step.Sensitive)
+}
+
+func TestParse_SensitiveAbsentLeavesFieldNil(t *testing.T) {
+	src := []byte("```bash {input=A}\necho hi\n```\n")
+
+	doc, err := (&GoldmarkParser{}).Parse(src, "/tmp/runbook.md")
+	require.NoError(t, err)
+	assert.Nil(t, doc.Blocks[0].Step.Sensitive)
+}
+
+func TestParse_SensitiveNameNotInInputIsError(t *testing.T) {
+	src := []byte("```bash {name=creds, input=A, sensitive=C}\necho hi\n```\n")
+
+	_, err := (&GoldmarkParser{}).Parse(src, "/tmp/runbook.md")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "creds")
+	assert.Contains(t, err.Error(), "C")
+}
+
 func TestParse_MalformedAttributeSyntaxIsError(t *testing.T) {
 	cases := []string{
 		"```bash {name=x\necho a\n```\n",         // unbalanced brace

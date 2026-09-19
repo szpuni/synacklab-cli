@@ -29,7 +29,7 @@ func drainEvents(t *testing.T, ch <-chan Event) (stdout, stderr []string, done E
 func runStep(t *testing.T, step *Step, inputs map[string]string, timeout time.Duration, store SessionStore) (stdout, stderr []string, done Event) {
 	t.Helper()
 	engine := NewEngine(nil)
-	_, events, err := engine.Run(context.Background(), step, inputs, timeout, store)
+	_, events, _, err := engine.Run(context.Background(), step, inputs, timeout, store)
 	require.NoError(t, err)
 	return drainEvents(t, events)
 }
@@ -144,10 +144,32 @@ func TestEngine_Run_UnresolvedTemplateReferenceFailsBeforeSpawn(t *testing.T) {
 	step := &Step{Name: "tmpl", Lang: "bash", Source: "echo {{vars.missing}}\n"}
 
 	engine := NewEngine(nil)
-	_, events, err := engine.Run(context.Background(), step, nil, time.Second, store)
+	_, events, cancel, err := engine.Run(context.Background(), step, nil, time.Second, store)
 
 	assert.Error(t, err)
 	assert.Nil(t, events)
+	assert.Nil(t, cancel)
+}
+
+func TestEngine_Run_CancelFuncStopsExecutionAndMarksCanceled(t *testing.T) {
+	store := NewSessionStore("s1", "/tmp/runbook.md", t.TempDir())
+	step := &Step{Name: "slow", Lang: "bash", Source: "sleep 30\n"}
+
+	engine := NewEngine(nil)
+	execution, events, cancel, err := engine.Run(context.Background(), step, nil, 10*time.Second, store)
+	require.NoError(t, err)
+	require.NotNil(t, cancel)
+
+	start := time.Now()
+	cancel()
+	_, _, done := drainEvents(t, events)
+	elapsed := time.Since(start)
+
+	assert.Less(t, elapsed, 4*time.Second, "cancel should stop the process group promptly, not wait for the timeout")
+	assert.True(t, done.Canceled)
+	assert.False(t, done.TimedOut)
+	assert.True(t, execution.Canceled)
+	assert.False(t, execution.TimedOut)
 }
 
 func TestEngine_Run_WritesLogAndSetsLogPath(t *testing.T) {
@@ -156,7 +178,7 @@ func TestEngine_Run_WritesLogAndSetsLogPath(t *testing.T) {
 	step := &Step{Name: "logged", Lang: "bash", Source: "echo out\n>&2 echo err\n"}
 
 	engine := NewEngine(NewFileLogWriter(logDir))
-	execution, events, err := engine.Run(context.Background(), step, nil, time.Second, store)
+	execution, events, _, err := engine.Run(context.Background(), step, nil, time.Second, store)
 	require.NoError(t, err)
 	drainEvents(t, events)
 

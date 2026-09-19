@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -65,6 +67,74 @@ func TestHandleGetDoc_ExposesConfirmationRequirement(t *testing.T) {
 	assert.True(t, got.Blocks[0].Step.RequiresConfirm)
 	assert.Contains(t, got.Blocks[0].Step.ConfirmReason, "rm -rf")
 	assert.False(t, got.Blocks[1].Step.RequiresConfirm)
+}
+
+func TestToSessionView_PopulatesStartedAtFromExecution(t *testing.T) {
+	started := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	sess := &Session{Vars: map[string]string{}, History: []Execution{{StepName: "hello", Started: started}}}
+
+	view := toSessionView(sess)
+
+	require.Len(t, view.History, 1)
+	assert.True(t, started.Equal(view.History[0].StartedAt))
+}
+
+func TestHandleGetDoc_IncludesSensitiveOnStep(t *testing.T) {
+	srv, _ := newTestServer(t, "```bash {name=creds, input=TOKEN, sensitive=TOKEN}\necho $TOKEN\n```\n\n```bash {name=plain}\necho hi\n```\n")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/doc", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	var got struct {
+		Blocks []struct {
+			Step *struct {
+				Name      string   `json:"name"`
+				Sensitive []string `json:"sensitive,omitempty"`
+			} `json:"step,omitempty"`
+		} `json:"blocks"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+
+	require.Len(t, got.Blocks, 2)
+	assert.Equal(t, []string{"TOKEN"}, got.Blocks[0].Step.Sensitive)
+	assert.Empty(t, got.Blocks[1].Step.Sensitive)
+}
+
+func TestHandleGetLog_ReturnsContentForPathInSessionHistory(t *testing.T) {
+	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+	logPath := filepath.Join(t.TempDir(), "1-hello.log")
+	require.NoError(t, os.WriteFile(logPath, []byte("log contents"), 0o644))
+	activeStore(srv).AppendHistory(Execution{StepName: "hello", LogPath: logPath})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/logs?path="+logPath, nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "log contents", rec.Body.String())
+}
+
+func TestHandleGetLog_404ForPathNotInSessionHistory(t *testing.T) {
+	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+	otherPath := filepath.Join(t.TempDir(), "other.log")
+	require.NoError(t, os.WriteFile(otherPath, []byte("secret"), 0o644))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/logs?path="+otherPath, nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestHandleGetLog_400WhenPathMissing(t *testing.T) {
+	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/logs", nil)
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
 func TestHandleGetSession_ReturnsVarsCwdHistory(t *testing.T) {
@@ -128,6 +198,42 @@ func TestHandlePostStepRun_UnknownStepReturns404(t *testing.T) {
 	srv.Routes().ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestHandlePostStepRun_RejectsConcurrentRunWith409(t *testing.T) {
+	srv, _ := newTestServer(t, "```bash {name=slow}\nsleep 5\n```\n\n```bash {name=other}\necho hi\n```\n")
+
+	req1 := httptest.NewRequest(http.MethodPost, "/api/steps/slow/run", bytes.NewReader([]byte(`{}`)))
+	rec1 := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec1, req1)
+	require.Equal(t, http.StatusAccepted, rec1.Code)
+
+	req2 := httptest.NewRequest(http.MethodPost, "/api/steps/other/run", bytes.NewReader([]byte(`{}`)))
+	rec2 := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec2, req2)
+
+	assert.Equal(t, http.StatusConflict, rec2.Code)
+	assert.Contains(t, rec2.Body.String(), "slow")
+
+	// Cancel the in-flight execution so a subsequent request is accepted
+	// again once it completes.
+	var got struct {
+		ExecutionID string `json:"execution_id"`
+	}
+	require.NoError(t, json.Unmarshal(rec1.Body.Bytes(), &got))
+	rec, ok := srv.registry.get(got.ExecutionID)
+	require.True(t, ok)
+	rec.cancel()
+	select {
+	case <-rec.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("execution did not complete in time")
+	}
+
+	req3 := httptest.NewRequest(http.MethodPost, "/api/steps/other/run", bytes.NewReader([]byte(`{}`)))
+	rec3 := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec3, req3)
+	assert.Equal(t, http.StatusAccepted, rec3.Code)
 }
 
 func TestHandlePostStepRun_ValidRunReturnsAcceptedAndExecutesAsync(t *testing.T) {

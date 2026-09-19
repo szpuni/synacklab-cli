@@ -12,7 +12,7 @@ import (
 )
 
 // canonicalAttrOrder matches the attribute table in project-brief.md §5.1.
-var canonicalAttrOrder = []string{"name", "input", "capture", "confirm", "cwd", "set_cwd", "timeout"}
+var canonicalAttrOrder = []string{"name", "input", "capture", "sensitive", "confirm", "cwd", "set_cwd", "timeout"}
 
 // FormatDocument rewrites every runnable fence's attribute string into
 // canonical key order and spacing (Requirement 12.1). Prose, code content,

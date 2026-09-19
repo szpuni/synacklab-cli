@@ -118,6 +118,15 @@ func stepFromFence(fcb *gast.FencedCodeBlock, lang string, source []byte, autoIn
 	if v := attrs["capture"]; v != "" {
 		step.Capture = splitTrim(v)
 	}
+	if v := attrs["sensitive"]; v != "" {
+		step.Sensitive = splitTrim(v)
+		for _, name := range step.Sensitive {
+			if !containsStr(step.Input, name) {
+				return nil, &Error{Type: ErrorTypeParse, Message: fmt.Sprintf(
+					"step %q: sensitive=%q is not declared in input=", step.Name, name)}
+			}
+		}
+	}
 
 	if v, ok := attrs["confirm"]; ok {
 		b, perr := strconv.ParseBool(v)
@@ -183,6 +192,15 @@ func parseFenceAttrs(info string) (map[string]string, error) {
 		}
 	}
 	return attrs, nil
+}
+
+func containsStr(list []string, target string) bool {
+	for _, s := range list {
+		if s == target {
+			return true
+		}
+	}
+	return false
 }
 
 func splitTrim(s string) []string {
