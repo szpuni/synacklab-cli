@@ -417,3 +417,42 @@ func TestMultiReconciler_ValidateAll_ValidationWarnings(t *testing.T) {
 		}
 	}
 }
+
+// TestMultiReconciler_ValidateAll_UsesRepositoryConfigRules checks that
+// multi-repo validation enforces exactly RepositoryConfig.Validate's rules —
+// including ones a separate copy used to miss (webhook URL scheme) — and
+// reports each problem once, by field.
+func TestMultiReconciler_ValidateAll_UsesRepositoryConfigRules(t *testing.T) {
+	config := &MultiRepositoryConfig{
+		Repositories: []RepositoryConfig{
+			{Name: "good-repo"},
+			{Name: "ftp-hook", Webhooks: []Webhook{{URL: "ftp://example.com/hook", Events: []string{"push"}, Secret: "s"}}},
+			{Name: "two-bad-topics", Topics: []string{"", "Bad"}},
+		},
+	}
+
+	result, err := NewMultiReconciler(newMockAPIClient(), "test-owner").ValidateAll(config, nil)
+	if err != nil {
+		t.Fatalf("ValidateAll() unexpected error = %v", err)
+	}
+
+	if len(result.Valid) != 1 || result.Valid[0] != "good-repo" {
+		t.Errorf("ValidateAll() valid = %v, want [good-repo]", result.Valid)
+	}
+	wantFields := map[string][]string{
+		"ftp-hook":       {"webhooks[0].url"},
+		"two-bad-topics": {"topics[0]", "topics[1]"},
+	}
+	for repo, want := range wantFields {
+		if _, invalid := result.Invalid[repo]; !invalid {
+			t.Errorf("ValidateAll() expected %s to be invalid", repo)
+		}
+		var got []string
+		for _, e := range result.Details[repo].Errors {
+			got = append(got, e.Field)
+		}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("ValidateAll() %s error fields = %v, want %v", repo, got, want)
+		}
+	}
+}

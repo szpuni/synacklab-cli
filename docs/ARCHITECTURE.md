@@ -16,7 +16,7 @@ These are the highest-touch concepts — touch them and ripples spread everywher
 
 1. **`RepositoryConfig`** (49 edges) — the desired state for a GitHub repo; referenced by every reconciler, validator, plan display, and merger
 2. **`NewMultiReconciler()`** (35 edges) — orchestrates config detection → merge → plan → apply across repos
-3. **`NewSessionStore()`** (31 edges) — runbook server's state for active documents and variables
+3. **`runbook.Session`** — one open runbook: its Document plus vars/cwd/history; `OpenSession`, `Start` (one step, all run rules), `RunAll` (non-interactive), `Reset`. `serve` and `run` are thin adapters over it (renamed from `NewSessionStore`/`Engine` on 2026-09-25; edge count predates that)
 4. **`Client`** (25 edges) — GitHub API wrapper; touches all mutations and reads
 5. **`MultiReconciler`** (25 edges) — runtime engine for multi-repo operations
 
@@ -41,7 +41,7 @@ These are the highest-touch concepts — touch them and ripples spread everywher
 **Design:** Reconciler interface appears in single-repo (GitHub Repository Reconciler spec), reused at multi-repo scale with batch processing.
 
 ### Runbook Step Execution Pipeline
-**Components:** Parser → Frontmatter → Step → Template (env merge) → Capture trailer → Execute (spawn subprocess) → Log
+**Components:** `OpenSession` (Parser → Frontmatter) → `Session.Start` (inputs → confirmation gate → Template → Capture trailer → process runner) → commit to session + Log
 
 - **Safety gates:** danger patterns (regex on output), confirm steps (human approval in interactive mode)
 - **Non-interactive mode:** fails closed on any confirm step

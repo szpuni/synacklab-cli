@@ -25,7 +25,7 @@ func TestIntegration_InputCaptureChainingAcrossTwoSteps(t *testing.T) {
 		"```bash {name=get_ip, capture=PUBLIC_IP}\nexport PUBLIC_IP=203.0.113.42\n```\n\n" +
 		"```bash {name=greet, input=PUBLIC_IP}\necho \"hello $PUBLIC_IP\"\n```\n"
 
-	srv, _ := newTestServer(t, src)
+	srv := newTestServer(t, src)
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
@@ -70,11 +70,11 @@ func TestIntegration_InputCaptureChainingAcrossTwoSteps(t *testing.T) {
 
 // TestIntegration_TimeoutViaAPILeavesNoOrphanProcess exercises the timeout
 // path through the same async goroutine the real API handler uses (not a
-// direct Engine.Run call), confirming the process group is actually gone
+// direct Session.Start call), confirming the process group is actually gone
 // afterward (Requirements 9.1, 9.2).
 func TestIntegration_TimeoutViaAPILeavesNoOrphanProcess(t *testing.T) {
 	src := "```bash {name=slow, timeout=200ms}\nsleep 5\n```\n"
-	srv, _ := newTestServer(t, src)
+	srv := newTestServer(t, src)
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 

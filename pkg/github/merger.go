@@ -15,7 +15,6 @@ const (
 // ConfigMerger merges global defaults with repository-specific settings
 type ConfigMerger interface {
 	MergeDefaults(defaults *RepositoryDefaults, repo *RepositoryConfig) (*RepositoryConfig, error)
-	ValidateMergedConfig(merged *RepositoryConfig) error
 	SetMergeStrategy(field string, strategy MergeStrategy)
 }
 

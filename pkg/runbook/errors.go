@@ -10,6 +10,8 @@ const (
 	ErrorTypeTemplate   ErrorType = "template"
 	ErrorTypeExecution  ErrorType = "execution"
 	ErrorTypeTimeout    ErrorType = "timeout"
+	ErrorTypeNotFound   ErrorType = "not_found"
+	ErrorTypeConflict   ErrorType = "conflict"
 )
 
 type Error struct {

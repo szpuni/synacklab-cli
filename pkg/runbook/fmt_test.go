@@ -1,6 +1,7 @@
 package runbook
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -85,4 +86,29 @@ func TestFormatDocument_PreservesFenceMarkerLength(t *testing.T) {
 	out, err := FormatDocument([]byte(src))
 	require.NoError(t, err)
 	assert.Equal(t, "````bash {name=x}\necho hi\n````\n", string(out))
+}
+
+// TestFormatDocument_RewritesExactlyTheFencesParseRuns guards the rule fmt
+// and the parser share: only non-empty top-level bash/python fences are
+// runnable steps, and only those get their attributes canonicalized.
+func TestFormatDocument_RewritesExactlyTheFencesParseRuns(t *testing.T) {
+	src := "```bash {capture=A, name=one}\nexport A=1\n```\n\n" +
+		"```sh {capture=B, name=shell}\necho sh\n```\n\n" +
+		"```bash {capture=C, name=empty}\n```\n\n" +
+		"- item\n\n  ```python {capture=D, name=nested}\n  print(1)\n  ```\n\n" +
+		"```python {capture=E, name=two}\nprint(2)\n```\n"
+
+	doc, err := Parse([]byte(src), "/tmp/runbook.md")
+	require.NoError(t, err)
+	assert.Len(t, doc.Steps, 2)
+	assert.Contains(t, doc.Steps, "one")
+	assert.Contains(t, doc.Steps, "two")
+
+	out, err := FormatDocument([]byte(src))
+	require.NoError(t, err)
+	want := strings.NewReplacer(
+		"{capture=A, name=one}", "{name=one, capture=A}",
+		"{capture=E, name=two}", "{name=two, capture=E}",
+	).Replace(src)
+	assert.Equal(t, want, string(out))
 }

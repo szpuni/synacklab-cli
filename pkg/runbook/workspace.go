@@ -2,7 +2,7 @@ package runbook
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -128,56 +128,27 @@ func (s *Server) handlePostOpen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Refusing a switch while a step is running takes precedence over the
-	// vars/history confirmation check below: canceling or waiting out that
-	// execution is a precondition, not something force should paper over
-	// (Requirement 6.4).
-	if running, ok := s.registry.runningInfo(); ok {
-		s.writeError(w, http.StatusConflict, fmt.Sprintf(
-			"step %q is still running (execution %s); cancel or wait for it before switching runbooks", running.stepName, running.id))
-		return
-	}
-
-	activeDocument, activeStore := s.active.get()
-	if activeDocument != nil && activeDocument.Path == absPath {
-		relPath := relativeToRoot(s.root, absPath)
-		s.writeJSON(w, http.StatusOK, map[string]any{"opened": relPath, "unchanged": true})
-		return
-	}
-
-	if activeStore != nil {
-		sess := activeStore.Get()
-		if !req.Force && (len(sess.Vars) > 0 || len(sess.History) > 0) {
-			msg := "switching runbooks will discard the current session's captured variables and history"
-			s.logger.Warn("%s", msg)
-			s.writeJSON(w, http.StatusConflict, map[string]any{"error": msg, "requires_confirmation": true})
-			return
+	unchanged, err := s.active.switchTo(absPath, req.Force, s.opts)
+	if err != nil {
+		var rbErr *Error
+		errors.As(err, &rbErr)
+		switch {
+		case errors.Is(err, errSessionNotEmpty):
+			s.logger.Warn("%s", rbErr.Message)
+			s.writeJSON(w, http.StatusConflict, map[string]any{"error": rbErr.Message, "requires_confirmation": true})
+		case rbErr != nil && rbErr.Type == ErrorTypeParse:
+			s.writeError(w, http.StatusBadRequest, "failed to parse "+req.File+": "+err.Error())
+		case rbErr != nil && rbErr.Type == ErrorTypeNotFound:
+			s.writeError(w, http.StatusNotFound, "file not found: "+req.File)
+		default:
+			s.writeError(w, statusFor(err), err.Error())
 		}
-	}
-
-	info, err := os.Stat(absPath)
-	if err != nil || info.IsDir() {
-		s.writeError(w, http.StatusNotFound, "file not found: "+req.File)
 		return
 	}
-
-	source, err := os.ReadFile(absPath)
-	if err != nil {
-		s.writeError(w, http.StatusNotFound, "failed to read "+req.File+": "+err.Error())
+	if unchanged {
+		s.writeJSON(w, http.StatusOK, map[string]any{"opened": relativeToRoot(s.root, absPath), "unchanged": true})
 		return
 	}
-	doc, err := (&GoldmarkParser{}).Parse(source, absPath)
-	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "failed to parse "+req.File+": "+err.Error())
-		return
-	}
-
-	cwd := s.defaultCwd
-	if cwd == "" {
-		cwd = filepath.Dir(absPath)
-	}
-	store := NewSessionStore(NewID(), absPath, cwd)
-	s.active.set(doc, store)
 
 	relPath := relativeToRoot(s.root, absPath)
 	s.logger.Info("opened %s", relPath)

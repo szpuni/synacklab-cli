@@ -923,3 +923,38 @@ func TestMultiReconciler_countPlanChanges(t *testing.T) {
 		})
 	}
 }
+
+// flakyCreateClient fails every CreateRepository with a retryable error,
+// counting the calls that reach the API.
+type flakyCreateClient struct {
+	*mockAPIClient
+	creates int
+}
+
+func (c *flakyCreateClient) CreateRepository(RepositoryConfig) (*Repository, error) {
+	c.creates++
+	return nil, &Error{Type: ErrorTypeNetwork, Message: "connection reset", Retryable: true}
+}
+
+// TestMultiReconciler_ApplyAll_DoesNotReplayPlanOnRetryableFailure: retrying
+// a failed API call is the API client's job (Client wraps every call in
+// WithRetry). ApplyAll must apply each plan once rather than re-running the
+// whole plan on top of that, which multiplied retries and replayed mutations.
+func TestMultiReconciler_ApplyAll_DoesNotReplayPlanOnRetryableFailure(t *testing.T) {
+	client := &flakyCreateClient{mockAPIClient: newMockAPIClient()}
+	plans := map[string]*ReconciliationPlan{
+		"repo1": {Repository: &RepositoryChange{Type: ChangeTypeCreate, After: &Repository{Name: "repo1"}}},
+	}
+
+	result, err := NewMultiReconciler(client, "test-owner").ApplyAll(plans)
+	if err == nil {
+		t.Fatal("ApplyAll() expected an error when every repository fails")
+	}
+
+	if _, failed := result.Failed["repo1"]; !failed {
+		t.Errorf("ApplyAll() expected repo1 to fail, result = %+v", result)
+	}
+	if client.creates != 1 {
+		t.Errorf("CreateRepository called %d times, want 1", client.creates)
+	}
+}

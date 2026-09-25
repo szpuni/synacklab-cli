@@ -717,29 +717,6 @@ func TestDefaultConfigMerger_MergeDefaults(t *testing.T) {
 	}
 }
 
-func TestDefaultConfigMerger_ValidateMergedConfig(t *testing.T) {
-	merger := NewConfigMerger()
-
-	validConfig := &RepositoryConfig{
-		Name:        "test-repo",
-		Description: "Test repository",
-	}
-
-	err := merger.ValidateMergedConfig(validConfig)
-	if err != nil {
-		t.Errorf("ValidateMergedConfig() error = %v, want nil", err)
-	}
-
-	invalidConfig := &RepositoryConfig{
-		Name: "", // Invalid: empty name
-	}
-
-	err = merger.ValidateMergedConfig(invalidConfig)
-	if err == nil {
-		t.Error("ValidateMergedConfig() error = nil, want error for invalid config")
-	}
-}
-
 // Helper function to create bool pointer
 func boolPtr(b bool) *bool {
 	return &b

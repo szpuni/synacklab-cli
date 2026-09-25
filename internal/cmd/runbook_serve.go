@@ -165,37 +165,17 @@ func buildRunbookServer(root, initialFile, cwdFlag string) (*runbook.Server, str
 		}
 	}
 
-	var doc *runbook.Document
-	var store runbook.SessionStore
+	opts := runbook.SessionOptions{Cwd: defaultCwd, Logs: runbook.NewFileLogWriter(".synacklab")}
 
+	var sess *runbook.Session
 	if initialFile != "" {
-		// Parsed at its absolute path so it stays comparable to absRoot —
-		// relativeToRoot (used to report active_file over the API) can't
-		// relate an absolute root to a relative document path.
-		absInitialFile, err := filepath.Abs(initialFile)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to resolve %s: %w", initialFile, err)
+		if sess, err = runbook.OpenSession(initialFile, opts); err != nil {
+			return nil, "", fmt.Errorf("failed to open %s: %w", initialFile, err)
 		}
-
-		source, err := os.ReadFile(absInitialFile)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to read %s: %w", initialFile, err)
-		}
-		doc, err = (&runbook.GoldmarkParser{}).Parse(source, absInitialFile)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to parse %s: %w", initialFile, err)
-		}
-
-		sessCwd := defaultCwd
-		if sessCwd == "" {
-			sessCwd = doc.Dir
-		}
-		store = runbook.NewSessionStore(runbook.NewID(), absInitialFile, sessCwd)
 	}
 
-	engine := runbook.NewEngine(runbook.NewFileLogWriter(".synacklab"))
-	srv := runbook.NewServer(doc, store, engine)
-	srv.EnableWorkspace(absRoot, defaultCwd)
+	srv := runbook.NewServer(sess, opts)
+	srv.EnableWorkspace(absRoot)
 
 	label := absRoot
 	if initialFile != "" {

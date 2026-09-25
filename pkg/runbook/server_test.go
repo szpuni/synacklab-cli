@@ -11,7 +11,7 @@ import (
 )
 
 func TestRoutes_ServesEmbeddedFrontend(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+	srv := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -22,7 +22,7 @@ func TestRoutes_ServesEmbeddedFrontend(t *testing.T) {
 }
 
 func TestRoutes_ServesEmbeddedStaticAssets(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+	srv := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
 
 	for _, path := range []string{"/app.js", "/app.css"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -35,7 +35,7 @@ func TestRoutes_ServesEmbeddedStaticAssets(t *testing.T) {
 }
 
 func TestRoutes_FrontendReferencesRealEndpoints(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+	srv := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
 
 	req := httptest.NewRequest(http.MethodGet, "/app.js", nil)
 	rec := httptest.NewRecorder()

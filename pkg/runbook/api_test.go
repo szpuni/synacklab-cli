@@ -3,10 +3,10 @@ package runbook
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
+	"net/url"
 	"testing"
 	"time"
 
@@ -14,25 +14,50 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newTestServer(t *testing.T, src string) (*Server, string) {
+// newTestServer serves a runbook written from src, logging executions to a
+// temp dir.
+func newTestServer(t *testing.T, src string) *Server {
 	t.Helper()
-	doc, err := (&GoldmarkParser{}).Parse([]byte(src), "/tmp/deploy.md")
-	require.NoError(t, err)
-
-	store := NewSessionStore("sess-1", doc.Path, t.TempDir())
-	srv := NewServer(doc, store, NewEngine(nil))
-	return srv, doc.Path
+	return NewServer(openTestSession(t, src, SessionOptions{Logs: NewFileLogWriter(t.TempDir())}), SessionOptions{})
 }
 
-// activeStore returns the Server's current SessionStore, for tests that
-// need to inspect/mutate session state directly.
-func activeStore(s *Server) SessionStore {
-	_, store := s.active.get()
-	return store
+// serve runs srv on a real listener, for tests that need WebSockets.
+func serve(t *testing.T, srv *Server) *httptest.Server {
+	t.Helper()
+	ts := httptest.NewServer(srv.Routes())
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+// runViaAPI starts step name and returns its done event, read off its
+// WebSocket as a browser would.
+func runViaAPI(t *testing.T, ts *httptest.Server, name string) map[string]any {
+	t.Helper()
+	return lastEventOf(t, wsDial(t, ts, startRun(t, ts, name)))
+}
+
+type sessionJSON struct {
+	Cwd     string            `json:"cwd"`
+	Vars    map[string]string `json:"vars"`
+	History []struct {
+		StepName  string    `json:"step_name"`
+		StartedAt time.Time `json:"started_at"`
+		LogPath   string    `json:"log_path"`
+	} `json:"history"`
+}
+
+func getSession(t *testing.T, h http.Handler) sessionJSON {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/session", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got sessionJSON
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	return got
 }
 
 func TestHandleGetDoc_ReturnsBlocksAndSession(t *testing.T) {
-	srv, _ := newTestServer(t, "# Title\n\n```bash {name=hello}\necho hi\n```\n")
+	srv := newTestServer(t, "# Title\n\n```bash {name=hello}\necho hi\n```\n")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/doc", nil)
 	rec := httptest.NewRecorder()
@@ -46,7 +71,7 @@ func TestHandleGetDoc_ReturnsBlocksAndSession(t *testing.T) {
 
 func TestHandleGetDoc_ExposesConfirmationRequirement(t *testing.T) {
 	src := "---\ndanger_patterns:\n  - \"rm -rf\"\n---\n```bash {name=wipe}\nrm -rf /tmp/x\n```\n\n```bash {name=safe}\necho hi\n```\n"
-	srv, _ := newTestServer(t, src)
+	srv := newTestServer(t, src)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/doc", nil)
 	rec := httptest.NewRecorder()
@@ -69,18 +94,8 @@ func TestHandleGetDoc_ExposesConfirmationRequirement(t *testing.T) {
 	assert.False(t, got.Blocks[1].Step.RequiresConfirm)
 }
 
-func TestToSessionView_PopulatesStartedAtFromExecution(t *testing.T) {
-	started := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-	sess := &Session{Vars: map[string]string{}, History: []Execution{{StepName: "hello", Started: started}}}
-
-	view := toSessionView(sess)
-
-	require.Len(t, view.History, 1)
-	assert.True(t, started.Equal(view.History[0].StartedAt))
-}
-
 func TestHandleGetDoc_IncludesSensitiveOnStep(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=creds, input=TOKEN, sensitive=TOKEN}\necho $TOKEN\n```\n\n```bash {name=plain}\necho hi\n```\n")
+	srv := newTestServer(t, "```bash {name=creds, input=TOKEN, sensitive=TOKEN}\necho $TOKEN\n```\n\n```bash {name=plain}\necho hi\n```\n")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/doc", nil)
 	rec := httptest.NewRecorder()
@@ -101,26 +116,40 @@ func TestHandleGetDoc_IncludesSensitiveOnStep(t *testing.T) {
 	assert.Empty(t, got.Blocks[1].Step.Sensitive)
 }
 
-func TestHandleGetLog_ReturnsContentForPathInSessionHistory(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
-	logPath := filepath.Join(t.TempDir(), "1-hello.log")
-	require.NoError(t, os.WriteFile(logPath, []byte("log contents"), 0o644))
-	activeStore(srv).AppendHistory(Execution{StepName: "hello", LogPath: logPath})
+func TestHandleGetSession_HistoryRecordsEachRunWithStartTime(t *testing.T) {
+	srv := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+	ts := serve(t, srv)
+	before := time.Now()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/logs?path="+logPath, nil)
-	rec := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec, req)
+	runViaAPI(t, ts, "hello")
 
-	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "log contents", rec.Body.String())
+	got := getSession(t, srv.Routes())
+	assert.NotEmpty(t, got.Cwd)
+	require.Len(t, got.History, 1)
+	assert.Equal(t, "hello", got.History[0].StepName)
+	assert.False(t, got.History[0].StartedAt.Before(before.Truncate(time.Second)))
+}
+
+func TestHandleGetLog_ServesLogOfAnExecutionInThisSession(t *testing.T) {
+	srv := newTestServer(t, "```bash {name=hello}\necho hi-from-log\n```\n")
+	ts := serve(t, srv)
+	runViaAPI(t, ts, "hello")
+	logPath := getSession(t, srv.Routes()).History[0].LogPath
+	require.NotEmpty(t, logPath)
+
+	resp, err := http.Get(ts.URL + "/api/logs?path=" + url.QueryEscape(logPath))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Contains(t, string(body), "hi-from-log")
 }
 
 func TestHandleGetLog_404ForPathNotInSessionHistory(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
-	otherPath := filepath.Join(t.TempDir(), "other.log")
-	require.NoError(t, os.WriteFile(otherPath, []byte("secret"), 0o644))
+	srv := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/logs?path="+otherPath, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/logs?path=/etc/hosts", nil)
 	rec := httptest.NewRecorder()
 	srv.Routes().ServeHTTP(rec, req)
 
@@ -128,7 +157,7 @@ func TestHandleGetLog_404ForPathNotInSessionHistory(t *testing.T) {
 }
 
 func TestHandleGetLog_400WhenPathMissing(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+	srv := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/logs", nil)
 	rec := httptest.NewRecorder()
@@ -137,36 +166,23 @@ func TestHandleGetLog_400WhenPathMissing(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
-func TestHandleGetSession_ReturnsVarsCwdHistory(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+func TestHandlePostSessionReset_ClearsVarsKeepsHistory(t *testing.T) {
+	srv := newTestServer(t, "```bash {name=set, capture=A}\nexport A=1\n```\n")
+	ts := serve(t, srv)
+	runViaAPI(t, ts, "set")
+	require.Equal(t, "1", getSession(t, srv.Routes()).Vars["A"])
 
-	req := httptest.NewRequest(http.MethodGet, "/api/session", nil)
 	rec := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec, req)
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/session/reset", nil))
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	var got struct {
-		Cwd  string            `json:"cwd"`
-		Vars map[string]string `json:"vars"`
-	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-	assert.NotEmpty(t, got.Cwd)
-}
-
-func TestHandlePostSessionReset_ClearsVars(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
-	activeStore(srv).SetVar("A", "1")
-
-	req := httptest.NewRequest(http.MethodPost, "/api/session/reset", nil)
-	rec := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Empty(t, activeStore(srv).Get().Vars)
+	got := getSession(t, srv.Routes())
+	assert.Empty(t, got.Vars)
+	assert.Len(t, got.History, 1)
 }
 
 func TestHandlePostStepRun_MissingInputReturns400(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=greet, input=NAME}\necho hi $NAME\n```\n")
+	srv := newTestServer(t, "```bash {name=greet, input=NAME}\necho hi $NAME\n```\n")
 
 	body, _ := json.Marshal(map[string]any{"inputs": map[string]string{}, "confirmed": false})
 	req := httptest.NewRequest(http.MethodPost, "/api/steps/greet/run", bytes.NewReader(body))
@@ -174,12 +190,12 @@ func TestHandlePostStepRun_MissingInputReturns400(t *testing.T) {
 	srv.Routes().ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Empty(t, activeStore(srv).Get().History)
+	assert.Empty(t, getSession(t, srv.Routes()).History)
 }
 
 func TestHandlePostStepRun_UnconfirmedDangerStepReturns400(t *testing.T) {
 	src := "---\ndanger_patterns:\n  - \"rm -rf\"\n---\n```bash {name=wipe}\nrm -rf /tmp/x\n```\n"
-	srv, _ := newTestServer(t, src)
+	srv := newTestServer(t, src)
 
 	body, _ := json.Marshal(map[string]any{"confirmed": false})
 	req := httptest.NewRequest(http.MethodPost, "/api/steps/wipe/run", bytes.NewReader(body))
@@ -191,7 +207,7 @@ func TestHandlePostStepRun_UnconfirmedDangerStepReturns400(t *testing.T) {
 }
 
 func TestHandlePostStepRun_UnknownStepReturns404(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+	srv := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/steps/missing/run", bytes.NewReader([]byte(`{}`)))
 	rec := httptest.NewRecorder()
@@ -200,63 +216,47 @@ func TestHandlePostStepRun_UnknownStepReturns404(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-func TestHandlePostStepRun_RejectsConcurrentRunWith409(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=slow}\nsleep 5\n```\n\n```bash {name=other}\necho hi\n```\n")
+func TestHandlePostStepRun_RejectedRunDoesNotHoldTheSlot(t *testing.T) {
+	srv := newTestServer(t, "```bash {name=greet, input=NAME}\necho hi $NAME\n```\n\n```bash {name=other}\necho hi\n```\n")
+	ts := serve(t, srv)
 
-	req1 := httptest.NewRequest(http.MethodPost, "/api/steps/slow/run", bytes.NewReader([]byte(`{}`)))
-	rec1 := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec1, req1)
-	require.Equal(t, http.StatusAccepted, rec1.Code)
+	resp, err := http.Post(ts.URL+"/api/steps/greet/run", "application/json", bytes.NewReader([]byte(`{}`)))
+	require.NoError(t, err)
+	resp.Body.Close()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 
-	req2 := httptest.NewRequest(http.MethodPost, "/api/steps/other/run", bytes.NewReader([]byte(`{}`)))
-	rec2 := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec2, req2)
-
-	assert.Equal(t, http.StatusConflict, rec2.Code)
-	assert.Contains(t, rec2.Body.String(), "slow")
-
-	// Cancel the in-flight execution so a subsequent request is accepted
-	// again once it completes.
-	var got struct {
-		ExecutionID string `json:"execution_id"`
-	}
-	require.NoError(t, json.Unmarshal(rec1.Body.Bytes(), &got))
-	rec, ok := srv.registry.get(got.ExecutionID)
-	require.True(t, ok)
-	rec.cancel()
-	select {
-	case <-rec.done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("execution did not complete in time")
-	}
-
-	req3 := httptest.NewRequest(http.MethodPost, "/api/steps/other/run", bytes.NewReader([]byte(`{}`)))
-	rec3 := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec3, req3)
-	assert.Equal(t, http.StatusAccepted, rec3.Code)
+	assert.Equal(t, "done", runViaAPI(t, ts, "other")["type"])
 }
 
-func TestHandlePostStepRun_ValidRunReturnsAcceptedAndExecutesAsync(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=greet, capture=OUT}\nexport OUT=hi\n```\n")
+func TestHandlePostStepRun_RejectsConcurrentRunWith409(t *testing.T) {
+	srv := newTestServer(t, "```bash {name=slow}\nsleep 5\n```\n\n```bash {name=other}\necho hi\n```\n")
+	ts := serve(t, srv)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/steps/greet/run", bytes.NewReader([]byte(`{}`)))
-	rec := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec, req)
+	slowID := startRun(t, ts, "slow")
+	conn := wsDial(t, ts, slowID)
 
-	require.Equal(t, http.StatusAccepted, rec.Code)
-	var got struct {
-		ExecutionID string `json:"execution_id"`
-	}
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
-	require.NotEmpty(t, got.ExecutionID)
+	resp, err := http.Post(ts.URL+"/api/steps/other/run", "application/json", bytes.NewReader([]byte(`{}`)))
+	require.NoError(t, err)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	assert.Contains(t, string(body), "slow")
 
-	rec2, ok := srv.registry.get(got.ExecutionID)
-	require.True(t, ok)
-	select {
-	case <-rec2.done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("execution did not complete in time")
-	}
+	cancelResp, err := http.Post(ts.URL+"/api/executions/"+slowID+"/cancel", "application/json", nil)
+	require.NoError(t, err)
+	cancelResp.Body.Close()
+	assert.Equal(t, true, lastEventOf(t, conn)["canceled"])
 
-	assert.Equal(t, "hi", activeStore(srv).Get().Vars["OUT"])
+	// The next run is accepted as soon as the previous one reported done.
+	assert.Equal(t, "done", runViaAPI(t, ts, "other")["type"])
+}
+
+func TestHandlePostStepRun_ValidRunReturnsAcceptedAndCommitsCaptures(t *testing.T) {
+	srv := newTestServer(t, "```bash {name=greet, capture=OUT}\nexport OUT=hi\n```\n")
+	ts := serve(t, srv)
+
+	done := runViaAPI(t, ts, "greet")
+
+	assert.Equal(t, map[string]any{"OUT": "hi"}, done["captured"])
+	assert.Equal(t, "hi", getSession(t, srv.Routes()).Vars["OUT"], "session must be updated by the time done is delivered")
 }

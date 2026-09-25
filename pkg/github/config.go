@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -44,197 +45,108 @@ func (r BranchProtectionRule) EnforceAdminsEnabled() bool {
 	return r.EnforceAdmins == nil || *r.EnforceAdmins
 }
 
-// Validate validates the repository configuration
+// Validate checks the configuration against GitHub's constraints. It is
+// the one set of rules for a repository config: single-repo and multi-repo
+// validation both use it. On failure it returns an ErrorTypeValidation
+// *Error whose Cause is a ValidationErrors listing every problem found, each
+// under its field path (e.g. "topics[2]", "webhooks[0].url").
 func (r *RepositoryConfig) Validate() error {
-	var validationErrors ValidationErrors
+	var errs ValidationErrors
 
-	if err := r.validateName(); err != nil {
-		if valErr, ok := err.(*ValidationError); ok {
-			validationErrors = append(validationErrors, *valErr)
-		} else {
-			validationErrors.Add("name", r.Name, err.Error())
-		}
+	if err := validateGitHubRepositoryName(r.Name); err != nil {
+		errs.Add("name", r.Name, err.Error())
 	}
-
-	if err := r.validateDescription(); err != nil {
-		validationErrors.Add("description", r.Description, err.Error())
-	}
-
-	if err := r.validateTopics(); err != nil {
-		validationErrors.Add("topics", fmt.Sprintf("%v", r.Topics), err.Error())
-	}
-
-	if err := r.validateBranchRules(); err != nil {
-		validationErrors.Add("branch_protection", "", err.Error())
-	}
-
-	if err := r.validateCollaborators(); err != nil {
-		validationErrors.Add("collaborators", "", err.Error())
-	}
-
-	if err := r.validateTeams(); err != nil {
-		validationErrors.Add("teams", "", err.Error())
-	}
-
-	if err := r.validateWebhooks(); err != nil {
-		validationErrors.Add("webhooks", "", err.Error())
-	}
-
-	if validationErrors.HasErrors() {
-		return &Error{
-			Type:      ErrorTypeValidation,
-			Message:   validationErrors.Error(),
-			Cause:     validationErrors,
-			Retryable: false,
-		}
-	}
-
-	return nil
-}
-
-// validateName validates repository name according to GitHub rules
-func (r *RepositoryConfig) validateName() error {
-	if r.Name == "" {
-		return &ValidationError{
-			Field:   "name",
-			Value:   r.Name,
-			Message: "repository name is required",
-		}
-	}
-
-	if len(r.Name) > 100 {
-		return &ValidationError{
-			Field:   "name",
-			Value:   r.Name,
-			Message: "repository name must be 100 characters or less",
-		}
-	}
-
-	// GitHub repository name validation
-	validName := regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
-	if !validName.MatchString(r.Name) {
-		return &ValidationError{
-			Field:   "name",
-			Value:   r.Name,
-			Message: "repository name can only contain alphanumeric characters, periods, hyphens, and underscores",
-		}
-	}
-
-	// Cannot start or end with period
-	if strings.HasPrefix(r.Name, ".") || strings.HasSuffix(r.Name, ".") {
-		return &ValidationError{
-			Field:   "name",
-			Value:   r.Name,
-			Message: "repository name cannot start or end with a period",
-		}
-	}
-
-	return nil
-}
-
-// validateDescription validates repository description
-func (r *RepositoryConfig) validateDescription() error {
 	if len(r.Description) > 350 {
-		return fmt.Errorf("repository description must be 350 characters or less")
+		errs.Add("description", "", "repository description must be 350 characters or less")
 	}
-	return nil
-}
 
-// validateTopics validates repository topics
-func (r *RepositoryConfig) validateTopics() error {
 	if len(r.Topics) > 20 {
-		return fmt.Errorf("repository can have at most 20 topics")
+		errs.Add("topics", "", "repository can have at most 20 topics")
 	}
-
 	for i, topic := range r.Topics {
-		if len(topic) == 0 {
-			return fmt.Errorf("topic %d cannot be empty", i+1)
-		}
-		if len(topic) > 50 {
-			return fmt.Errorf("topic %d must be 50 characters or less", i+1)
-		}
-		// GitHub topic validation
-		validTopic := regexp.MustCompile(`^[a-z0-9-]+$`)
-		if !validTopic.MatchString(topic) {
-			return fmt.Errorf("topic %d can only contain lowercase letters, numbers, and hyphens", i+1)
+		if err := validateGitHubTopic(topic); err != nil {
+			errs.Add(fmt.Sprintf("topics[%d]", i), topic, fmt.Sprintf("topic %d %s", i+1, err))
 		}
 	}
 
-	return nil
-}
-
-// validateBranchRules validates branch protection rules
-func (r *RepositoryConfig) validateBranchRules() error {
 	for i, rule := range r.BranchRules {
 		if rule.Pattern == "" {
-			return fmt.Errorf("branch protection rule %d: pattern is required", i+1)
+			errs.Add(fmt.Sprintf("branch_protection[%d].pattern", i), "", fmt.Sprintf("branch protection rule %d: pattern is required", i+1))
 		}
 		if rule.RequiredReviews < 0 || rule.RequiredReviews > 6 {
-			return fmt.Errorf("branch protection rule %d: required reviews must be between 0 and 6", i+1)
+			errs.Add(fmt.Sprintf("branch_protection[%d].required_reviews", i), strconv.Itoa(rule.RequiredReviews),
+				fmt.Sprintf("branch protection rule %d: required reviews must be between 0 and 6", i+1))
 		}
 	}
-	return nil
-}
 
-// validateCollaborators validates collaborator configurations
-func (r *RepositoryConfig) validateCollaborators() error {
 	for i, collab := range r.Collaborators {
+		field := fmt.Sprintf("collaborators[%d]", i)
 		if collab.Username == "" {
-			return fmt.Errorf("collaborator %d: username is required", i+1)
-		}
-		if err := validateGitHubUsername(collab.Username); err != nil {
-			return fmt.Errorf("collaborator %d: %w", i+1, err)
+			errs.Add(field+".username", "", fmt.Sprintf("collaborator %d: username is required", i+1))
+		} else if err := validateGitHubUsername(collab.Username); err != nil {
+			errs.Add(field+".username", collab.Username, fmt.Sprintf("collaborator %d: %v", i+1, err))
 		}
 		if !isValidPermission(collab.Permission) {
-			return fmt.Errorf("collaborator %d: permission must be one of: read, write, admin", i+1)
+			errs.Add(field+".permission", collab.Permission, fmt.Sprintf("collaborator %d: permission must be one of: read, write, admin", i+1))
 		}
 	}
-	return nil
-}
 
-// validateTeams validates team access configurations
-func (r *RepositoryConfig) validateTeams() error {
 	for i, team := range r.Teams {
+		field := fmt.Sprintf("teams[%d]", i)
 		if team.TeamSlug == "" {
-			return fmt.Errorf("team %d: team slug is required", i+1)
-		}
-		if err := validateGitHubTeamSlug(team.TeamSlug); err != nil {
-			return fmt.Errorf("team %d: %w", i+1, err)
+			errs.Add(field+".team", "", fmt.Sprintf("team %d: team slug is required", i+1))
+		} else if err := validateGitHubTeamSlug(team.TeamSlug); err != nil {
+			errs.Add(field+".team", team.TeamSlug, fmt.Sprintf("team %d: %v", i+1, err))
 		}
 		if !isValidPermission(team.Permission) {
-			return fmt.Errorf("team %d: permission must be one of: read, write, admin", i+1)
+			errs.Add(field+".permission", team.Permission, fmt.Sprintf("team %d: permission must be one of: read, write, admin", i+1))
 		}
 	}
-	return nil
-}
 
-// validateWebhooks validates webhook configurations
-func (r *RepositoryConfig) validateWebhooks() error {
 	for i, webhook := range r.Webhooks {
-		if webhook.URL == "" {
-			return fmt.Errorf("webhook %d: URL is required", i+1)
-		}
-		parsedURL, err := url.Parse(webhook.URL)
-		if err != nil {
-			return fmt.Errorf("webhook %d: invalid URL format: %w", i+1, err)
-		}
-		// Require HTTP or HTTPS scheme for webhooks
-		if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-			return fmt.Errorf("webhook %d: URL must use http or https scheme", i+1)
-		}
-		if parsedURL.Host == "" {
-			return fmt.Errorf("webhook %d: URL must have a valid host", i+1)
+		field := fmt.Sprintf("webhooks[%d]", i)
+		if msg := webhookURLProblem(webhook.URL); msg != "" {
+			errs.Add(field+".url", "", fmt.Sprintf("webhook %d: %s", i+1, msg))
 		}
 		if len(webhook.Events) == 0 {
-			return fmt.Errorf("webhook %d: at least one event is required", i+1)
+			errs.Add(field+".events", "", fmt.Sprintf("webhook %d: at least one event is required", i+1))
 		}
 		for j, event := range webhook.Events {
 			if !isValidWebhookEvent(event) {
-				return fmt.Errorf("webhook %d, event %d: invalid event type '%s'", i+1, j+1, event)
+				errs.Add(fmt.Sprintf("%s.events[%d]", field, j), event, fmt.Sprintf("webhook %d, event %d: invalid event type '%s'", i+1, j+1, event))
 			}
 		}
 	}
+
+	if errs.HasErrors() {
+		return &Error{
+			Type:      ErrorTypeValidation,
+			Message:   errs.Error(),
+			Cause:     errs,
+			Retryable: false,
+		}
+	}
 	return nil
+}
+
+// webhookURLProblem describes what is wrong with a webhook URL, or returns
+// "" if it is usable. The URL itself is never echoed back, since it may
+// carry credentials.
+func webhookURLProblem(rawURL string) string {
+	if rawURL == "" {
+		return "URL is required"
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "invalid URL format"
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "URL must use http or https scheme"
+	}
+	if parsed.Host == "" {
+		return "URL must have a valid host"
+	}
+	return ""
 }
 
 // isValidPermission checks if the permission level is valid
@@ -392,62 +304,36 @@ func LoadRepositoryConfigFromFile(filename string) (*RepositoryConfig, error) {
 
 // validateGitHubRepositoryName validates a GitHub repository name according to GitHub's rules
 func validateGitHubRepositoryName(name string) error {
-	if name == "" {
-		return fmt.Errorf("repository name cannot be empty")
-	}
-
-	// Repository name length validation (GitHub allows 1-100 characters)
-	if len(name) > 100 {
+	switch {
+	case name == "":
+		return fmt.Errorf("repository name is required")
+	case len(name) > 100:
 		return fmt.Errorf("repository name must be 100 characters or less")
-	}
-
-	// Repository name format validation
-	// GitHub repository names can contain alphanumeric characters, hyphens, underscores, and periods
-	// They cannot start with a period or hyphen
-	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "-") {
-		return fmt.Errorf("repository name cannot start with a period or hyphen")
-	}
-
-	// Check for valid characters
-	for _, char := range name {
-		if !isValidRepoNameChar(char) {
-			return fmt.Errorf("repository name can only contain alphanumeric characters, hyphens, underscores, and periods")
-		}
-	}
-
-	// Repository names cannot end with .git
-	if strings.HasSuffix(strings.ToLower(name), ".git") {
+	case strings.IndexFunc(name, func(c rune) bool { return !isValidRepoNameChar(c) }) >= 0:
+		return fmt.Errorf("repository name can only contain alphanumeric characters, periods, hyphens, and underscores")
+	case strings.HasPrefix(name, ".") || strings.HasSuffix(name, "."):
+		return fmt.Errorf("repository name cannot start or end with a period")
+	case strings.HasPrefix(name, "-"):
+		return fmt.Errorf("repository name cannot start with a hyphen")
+	case strings.HasSuffix(strings.ToLower(name), ".git"):
 		return fmt.Errorf("repository name cannot end with .git")
 	}
-
 	return nil
 }
 
-// validateGitHubTopic validates a GitHub topic according to GitHub's rules
+// validateGitHubTopic validates a GitHub topic according to GitHub's rules.
+// Its message is phrased to follow a "topic N" prefix.
 func validateGitHubTopic(topic string) error {
-	if topic == "" {
-		return fmt.Errorf("topic cannot be empty")
+	switch {
+	case topic == "":
+		return fmt.Errorf("cannot be empty")
+	case len(topic) > 50:
+		return fmt.Errorf("must be 50 characters or less")
+	case strings.IndexFunc(topic, func(c rune) bool { return !isValidTopicChar(c) }) >= 0:
+		return fmt.Errorf("can only contain lowercase letters, numbers, and hyphens")
+	case strings.HasPrefix(topic, "-") || strings.HasSuffix(topic, "-"):
+		return fmt.Errorf("cannot start or end with a hyphen")
 	}
-
-	// Topic length validation (GitHub allows 1-50 characters)
-	if len(topic) > 50 {
-		return fmt.Errorf("topic must be 50 characters or less")
-	}
-
-	// Topic format validation
-	// GitHub topics can only contain lowercase letters, numbers, and hyphens
-	// They cannot start or end with hyphens
-	if strings.HasPrefix(topic, "-") || strings.HasSuffix(topic, "-") {
-		return fmt.Errorf("topic cannot start or end with a hyphen")
-	}
-
-	// Check for valid characters (lowercase letters, numbers, and hyphens only)
-	for _, char := range topic {
-		if !isValidTopicChar(char) {
-			return fmt.Errorf("topic can only contain lowercase letters, numbers, and hyphens")
-		}
-	}
-
 	return nil
 }
 

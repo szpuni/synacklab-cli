@@ -4,7 +4,7 @@ import "net/http"
 
 func (s *Server) handleWSExecution(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	rec, ok := s.registry.get(id)
+	rec, ok := s.active.execution(id)
 	if !ok {
 		http.Error(w, "unknown execution "+id, http.StatusNotFound)
 		return
@@ -23,7 +23,7 @@ func (s *Server) handleWSExecution(w http.ResponseWriter, r *http.Request) {
 		if writeErr := conn.WriteJSON(toWSEvent(ev)); writeErr != nil {
 			return
 		}
-		if ev.Type == "done" {
+		if ev.Type == EventDone {
 			finished = true
 		}
 	}
@@ -35,7 +35,7 @@ func (s *Server) handleWSExecution(w http.ResponseWriter, r *http.Request) {
 		if writeErr := conn.WriteJSON(toWSEvent(ev)); writeErr != nil {
 			return
 		}
-		if ev.Type == "done" {
+		if ev.Type == EventDone {
 			return
 		}
 	}
@@ -44,7 +44,7 @@ func (s *Server) handleWSExecution(w http.ResponseWriter, r *http.Request) {
 // wsEvent mirrors project-brief.md §9.2's wire format: stdout/stderr events
 // carry only data, the terminal done event carries exit_code/duration_ms/captured.
 type wsEvent struct {
-	Type       string            `json:"type"`
+	Type       EventType         `json:"type"`
 	Data       string            `json:"data,omitempty"`
 	ExitCode   *int              `json:"exit_code,omitempty"`
 	DurationMS *int64            `json:"duration_ms,omitempty"`
@@ -55,7 +55,7 @@ type wsEvent struct {
 
 func toWSEvent(ev Event) wsEvent {
 	out := wsEvent{Type: ev.Type, Data: ev.Data}
-	if ev.Type == "done" {
+	if ev.Type == EventDone {
 		exitCode, durationMS, timedOut, canceled := ev.ExitCode, ev.Duration.Milliseconds(), ev.TimedOut, ev.Canceled
 		out.ExitCode = &exitCode
 		out.DurationMS = &durationMS
@@ -72,7 +72,7 @@ func toWSEvent(ev Event) wsEvent {
 // there is nothing left to cancel (Requirement 4.6).
 func (s *Server) handleCancelExecution(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	rec, ok := s.registry.get(id)
+	rec, ok := s.active.execution(id)
 	if !ok {
 		s.writeError(w, http.StatusNotFound, "unknown execution "+id)
 		return

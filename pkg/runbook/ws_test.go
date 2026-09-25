@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
@@ -44,7 +43,7 @@ func readAllWSEvents(t *testing.T, conn *websocket.Conn) []map[string]any {
 }
 
 func TestHandleWSExecution_StreamsEventsInOrder(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+	srv := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
@@ -65,19 +64,12 @@ func TestHandleWSExecution_StreamsEventsInOrder(t *testing.T) {
 }
 
 func TestHandleWSExecution_LateConnectReplaysBufferedEvents(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+	srv := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
 	execID := startRun(t, ts, "hello")
-
-	rec, ok := srv.registry.get(execID)
-	require.True(t, ok)
-	select {
-	case <-rec.done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("execution did not finish in time")
-	}
+	lastEventOf(t, wsDial(t, ts, execID)) // wait until the execution has finished
 
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws/executions/" + execID
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -91,7 +83,7 @@ func TestHandleWSExecution_LateConnectReplaysBufferedEvents(t *testing.T) {
 }
 
 func TestHandleWSExecution_UnknownIDReturns404(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+	srv := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
