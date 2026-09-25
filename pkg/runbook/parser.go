@@ -12,26 +12,20 @@ import (
 	"github.com/yuin/goldmark/text"
 )
 
-// Parser turns runbook Markdown source into a Document.
-type Parser interface {
-	Parse(source []byte, docPath string) (*Document, error)
-}
-
-// GoldmarkParser implements Parser using goldmark to locate top-level fenced
-// code blocks and a custom fence-info-string parser for runbook attributes.
-// Everything outside a runnable (bash/python) fence — headings, prose, lists,
-// non-runnable code fences — is copied verbatim as Prose, so parsing never
-// has to reconstruct Markdown from the AST.
-type GoldmarkParser struct{}
-
-func (p *GoldmarkParser) Parse(source []byte, docPath string) (*Document, error) {
+// Parse turns runbook Markdown source into a Document. Everything outside a
+// runnable fence — headings, prose, lists, non-runnable code fences — is
+// copied verbatim as Prose, so parsing never has to reconstruct Markdown
+// from the AST.
+func Parse(source []byte, docPath string) (*Document, error) {
 	fm, source, err := parseFrontmatter(source)
 	if err != nil {
 		return nil, err
 	}
 
-	md := goldmark.New()
-	root := md.Parser().Parse(text.NewReader(source))
+	fences, err := runnableFences(source)
+	if err != nil {
+		return nil, err
+	}
 
 	doc := &Document{
 		Path:        docPath,
@@ -40,9 +34,6 @@ func (p *GoldmarkParser) Parse(source []byte, docPath string) (*Document, error)
 		Steps:       map[string]*Step{},
 	}
 
-	autoIndex := 0
-	cursor := 0
-
 	appendProse := func(raw []byte) {
 		if strings.TrimSpace(string(raw)) == "" {
 			return
@@ -50,27 +41,12 @@ func (p *GoldmarkParser) Parse(source []byte, docPath string) (*Document, error)
 		doc.Blocks = append(doc.Blocks, Block{Kind: BlockProse, Prose: string(raw)})
 	}
 
-	for n := root.FirstChild(); n != nil; n = n.NextSibling() {
-		fcb, ok := n.(*gast.FencedCodeBlock)
-		if !ok {
-			continue
-		}
+	autoIndex := 0
+	cursor := 0
+	for _, f := range fences {
+		appendProse(source[cursor:f.start])
 
-		lang := string(fcb.Language(source))
-		if lang != "bash" && lang != "python" {
-			continue
-		}
-
-		lines := fcb.Lines()
-		if lines.Len() == 0 {
-			continue
-		}
-		contentStart, contentStop := lines.At(0).Start, lines.At(lines.Len()-1).Stop
-		fenceStart, fenceStop := expandFence(source, contentStart, contentStop)
-
-		appendProse(source[cursor:fenceStart])
-
-		step, err := stepFromFence(fcb, lang, source, &autoIndex)
+		step, err := stepFromFence(f, &autoIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -81,27 +57,69 @@ func (p *GoldmarkParser) Parse(source []byte, docPath string) (*Document, error)
 		doc.Steps[step.Name] = step
 		doc.Blocks = append(doc.Blocks, Block{Kind: BlockStep, Step: step})
 
-		cursor = fenceStop
+		cursor = f.stop
 	}
 	appendProse(source[cursor:])
 
 	return doc, nil
 }
 
-func stepFromFence(fcb *gast.FencedCodeBlock, lang string, source []byte, autoIndex *int) (*Step, error) {
-	info := ""
-	if fcb.Info != nil {
-		info = string(fcb.Info.Segment.Value(source))
-	}
+// runnableFence is one top-level, non-empty bash/python fenced code block —
+// the only kind of fence that becomes a Step.
+type runnableFence struct {
+	lang  string
+	attrs map[string]string
+	// code is the block's content with fence indentation removed.
+	code string
+	// start/stop span the whole fence including its delimiter lines;
+	// contentStart/contentStop span only the raw content between them.
+	start, stop, contentStart, contentStop int
+}
 
-	attrs, err := parseFenceAttrs(info)
-	if err != nil {
-		return nil, &Error{Type: ErrorTypeParse, Message: fmt.Sprintf("malformed fence attributes %q: %s", info, err)}
-	}
+// runnableFences finds every runnable fence in source, in document order,
+// with its attributes parsed.
+func runnableFences(source []byte) ([]runnableFence, error) {
+	root := goldmark.New().Parser().Parse(text.NewReader(source))
 
+	var fences []runnableFence
+	for n := root.FirstChild(); n != nil; n = n.NextSibling() {
+		fcb, ok := n.(*gast.FencedCodeBlock)
+		if !ok {
+			continue
+		}
+		lang := string(fcb.Language(source))
+		if lang != "bash" && lang != "python" {
+			continue
+		}
+		lines := fcb.Lines()
+		if lines.Len() == 0 {
+			continue
+		}
+
+		info := ""
+		if fcb.Info != nil {
+			info = string(fcb.Info.Segment.Value(source))
+		}
+		attrs, err := parseFenceAttrs(info)
+		if err != nil {
+			return nil, &Error{Type: ErrorTypeParse, Message: fmt.Sprintf("malformed fence attributes %q: %s", info, err)}
+		}
+
+		contentStart, contentStop := lines.At(0).Start, lines.At(lines.Len()-1).Stop
+		start, stop := expandFence(source, contentStart, contentStop)
+		fences = append(fences, runnableFence{
+			lang: lang, attrs: attrs, code: string(lines.Value(source)),
+			start: start, stop: stop, contentStart: contentStart, contentStop: contentStop,
+		})
+	}
+	return fences, nil
+}
+
+func stepFromFence(f runnableFence, autoIndex *int) (*Step, error) {
+	attrs := f.attrs
 	step := &Step{
-		Lang:   lang,
-		Source: string(fcb.Lines().Value(source)),
+		Lang:   f.lang,
+		Source: f.code,
 		Cwd:    attrs["cwd"],
 	}
 

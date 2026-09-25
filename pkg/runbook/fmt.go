@@ -2,13 +2,8 @@ package runbook
 
 import (
 	"bytes"
-	"fmt"
 	"sort"
 	"strings"
-
-	"github.com/yuin/goldmark"
-	gast "github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/text"
 )
 
 // canonicalAttrOrder matches the attribute table in project-brief.md §5.1.
@@ -40,54 +35,30 @@ func FormatDocument(source []byte) ([]byte, error) {
 }
 
 func formatFences(source []byte) ([]byte, error) {
-	md := goldmark.New()
-	root := md.Parser().Parse(text.NewReader(source))
+	fences, err := runnableFences(source)
+	if err != nil {
+		return nil, err
+	}
 
 	var out bytes.Buffer
 	cursor := 0
+	for _, f := range fences {
+		out.Write(source[cursor:f.start])
 
-	for n := root.FirstChild(); n != nil; n = n.NextSibling() {
-		fcb, ok := n.(*gast.FencedCodeBlock)
-		if !ok {
-			continue
-		}
-		lang := string(fcb.Language(source))
-		if lang != "bash" && lang != "python" {
-			continue
-		}
-
-		lines := fcb.Lines()
-		if lines.Len() == 0 {
-			continue
-		}
-		contentStart, contentStop := lines.At(0).Start, lines.At(lines.Len()-1).Stop
-		fenceStart, fenceStop := expandFence(source, contentStart, contentStop)
-
-		out.Write(source[cursor:fenceStart])
-
-		info := ""
-		if fcb.Info != nil {
-			info = string(fcb.Info.Segment.Value(source))
-		}
-		attrs, err := parseFenceAttrs(info)
-		if err != nil {
-			return nil, &Error{Type: ErrorTypeParse, Message: fmt.Sprintf("malformed fence attributes %q: %s", info, err)}
-		}
-
-		marker := fenceMarker(source, fenceStart)
+		marker := fenceMarker(source, f.start)
 		out.WriteString(marker)
-		out.WriteString(lang)
-		if canonical := canonicalAttrString(attrs); canonical != "" {
+		out.WriteString(f.lang)
+		if canonical := canonicalAttrString(f.attrs); canonical != "" {
 			out.WriteString(" {")
 			out.WriteString(canonical)
 			out.WriteString("}")
 		}
 		out.WriteString("\n")
-		out.Write(source[contentStart:contentStop])
+		out.Write(source[f.contentStart:f.contentStop])
 		out.WriteString(marker)
 		out.WriteString("\n")
 
-		cursor = fenceStop
+		cursor = f.stop
 	}
 	out.Write(source[cursor:])
 

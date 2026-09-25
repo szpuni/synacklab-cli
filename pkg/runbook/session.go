@@ -42,7 +42,7 @@ func OpenSession(path string, opts SessionOptions) (*Session, error) {
 	if err != nil {
 		return nil, &Error{Type: ErrorTypeNotFound, Message: fmt.Sprintf("failed to read %s: %v", path, err), Cause: err}
 	}
-	doc, err := (&GoldmarkParser{}).Parse(source, absPath)
+	doc, err := Parse(source, absPath)
 	if err != nil {
 		return nil, err
 	}
