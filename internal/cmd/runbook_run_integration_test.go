@@ -11,7 +11,7 @@ import (
 
 // TestRunRunbookRun_EndToEndWithSetAndDiskLogging drives the actual `run`
 // RunE entrypoint (file read, parse, --set, real FileLogWriter under
-// .synacklab) rather than the narrower executeNonInteractive unit tests,
+// .synacklab) rather than the narrower Session.RunAll unit tests,
 // which use a nil log writer (Requirements 11.1, 11.2, 11.5).
 func TestRunRunbookRun_EndToEndWithSetAndDiskLogging(t *testing.T) {
 	dir := t.TempDir()

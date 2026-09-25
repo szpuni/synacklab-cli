@@ -1,6 +1,9 @@
 package runbook
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type BlockKind string
 
@@ -45,9 +48,9 @@ type Document struct {
 	Steps       map[string]*Step
 }
 
-// Session is one running server's state: captured vars, cwd, execution history.
-// Vars is a flat, last-write-wins namespace; SessionStore guards concurrent access.
-type Session struct {
+// SessionState is a snapshot of a Session's accumulated state: captured
+// vars (a flat, last-write-wins namespace), cwd, and execution history.
+type SessionState struct {
 	ID      string
 	DocPath string
 	Cwd     string
@@ -71,13 +74,38 @@ type Execution struct {
 	Captured map[string]string
 }
 
-// Event is a single message streamed to the frontend over the execution's WebSocket.
+// EventType distinguishes a step's output lines from its terminal event.
+type EventType string
+
+const (
+	EventStdout EventType = "stdout"
+	EventStderr EventType = "stderr"
+	EventDone   EventType = "done"
+)
+
+// Event is a single message streamed from a running step: an output line,
+// or the terminal EventDone carrying the result.
 type Event struct {
-	Type     string
+	Type     EventType
 	Data     string
 	ExitCode int
 	Duration time.Duration
 	TimedOut bool
 	Canceled bool
 	Captured map[string]string
+}
+
+// failure describes why a done Event counts as a failed step — "canceled",
+// "timed out", or "exited with code N" — or returns "" for success.
+func (e Event) failure() string {
+	switch {
+	case e.Canceled:
+		return "canceled"
+	case e.TimedOut:
+		return "timed out"
+	case e.ExitCode != 0:
+		return fmt.Sprintf("exited with code %d", e.ExitCode)
+	default:
+		return ""
+	}
 }

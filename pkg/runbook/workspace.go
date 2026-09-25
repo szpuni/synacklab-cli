@@ -139,15 +139,15 @@ func (s *Server) handlePostOpen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activeDocument, activeStore := s.active.get()
-	if activeDocument != nil && activeDocument.Path == absPath {
+	active := s.active.get()
+	if active != nil && active.Document().Path == absPath {
 		relPath := relativeToRoot(s.root, absPath)
 		s.writeJSON(w, http.StatusOK, map[string]any{"opened": relPath, "unchanged": true})
 		return
 	}
 
-	if activeStore != nil {
-		sess := activeStore.Get()
+	if active != nil {
+		sess := active.State()
 		if !req.Force && (len(sess.Vars) > 0 || len(sess.History) > 0) {
 			msg := "switching runbooks will discard the current session's captured variables and history"
 			s.logger.Warn("%s", msg)
@@ -156,7 +156,7 @@ func (s *Server) handlePostOpen(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	doc, store, err := OpenRunbook(absPath, s.defaultCwd)
+	sess, err := OpenSession(absPath, s.opts)
 	if err != nil {
 		var rbErr *Error
 		if errors.As(err, &rbErr) && rbErr.Type == ErrorTypeParse {
@@ -166,7 +166,7 @@ func (s *Server) handlePostOpen(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusNotFound, "file not found: "+req.File)
 		return
 	}
-	s.active.set(doc, store)
+	s.active.set(sess)
 
 	relPath := relativeToRoot(s.root, absPath)
 	s.logger.Info("opened %s", relPath)

@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"synacklab/pkg/config"
-	rblog "synacklab/pkg/log"
 	"synacklab/pkg/runbook"
 )
 
@@ -57,7 +56,7 @@ func runRunbookRun(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	doc, store, err := runbook.OpenRunbook(docPath, "")
+	sess, err := runbook.OpenSession(docPath, runbook.SessionOptions{Logs: runbook.NewFileLogWriter(".synacklab")})
 	if err != nil {
 		return fmt.Errorf("failed to open %s: %w", docPath, err)
 	}
@@ -76,77 +75,19 @@ func runRunbookRun(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	engine := runbook.NewEngine(runbook.NewFileLogWriter(".synacklab"))
-
 	// SIGINT/SIGTERM cancels the currently-running step's process group
 	// instead of leaving it orphaned (it runs in its own group — see
-	// executor.go's timeout-kill mechanism — so the default "just die"
+	// process.go's timeout-kill mechanism — so the default "just die"
 	// behavior on an unhandled signal would otherwise not reach it).
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	return executeNonInteractive(ctx, doc, sets, store, engine, os.Stdout, logger)
-}
-
-// executeNonInteractive runs every Step in document order, stopping at the
-// first failure (Requirement 11.4). A step with an unmet input=, or one
-// requiring confirmation, fails before any process is spawned for it
-// (Requirements 11.2, 11.3). ctx is the parent for every step's execution —
-// canceling it (e.g. via SIGINT/SIGTERM) kills the currently-running step's
-// process group rather than orphaning it.
-func executeNonInteractive(ctx context.Context, doc *runbook.Document, sets map[string]string, store runbook.SessionStore, engine runbook.Engine, out io.Writer, logger *rblog.Logger) error {
-	for _, block := range doc.Blocks {
-		if block.Kind != runbook.BlockStep {
-			continue
+	if err := sess.RunAll(ctx, sets, os.Stdout, logger); err != nil {
+		var rbErr *runbook.Error
+		if errors.As(err, &rbErr) && rbErr.Type == runbook.ErrorTypeValidation {
+			return fmt.Errorf("%w — pass inputs with --set; steps that need confirmation fail closed here, run them via 'synacklab runbook serve'", err)
 		}
-		step := block.Step
-
-		inputs := map[string]string{}
-		var missing []string
-		for _, name := range step.Input {
-			v, ok := sets[name]
-			if !ok {
-				missing = append(missing, name)
-				continue
-			}
-			inputs[name] = v
-		}
-		if len(missing) > 0 {
-			return fmt.Errorf("step %q: missing required --set for input(s): %s", step.Name, strings.Join(missing, ", "))
-		}
-
-		if required, reason := runbook.RequiresConfirmation(step, doc.Frontmatter.DangerPatterns); required {
-			return fmt.Errorf("step %q requires confirmation (%s); non-interactive mode has no way to confirm, so it fails closed — run it via `synacklab serve` instead", step.Name, reason)
-		}
-
-		logger.Info("running step %q", step.Name)
-
-		timeout := runbook.EffectiveTimeout(step, doc.Frontmatter.DefaultTimeout)
-		_, events, _, err := engine.Run(ctx, step, inputs, timeout, store)
-		if err != nil {
-			logger.Error("step %q: %s", step.Name, err)
-			return fmt.Errorf("step %q: %w", step.Name, err)
-		}
-
-		var done runbook.Event
-		for ev := range events {
-			switch ev.Type {
-			case "stdout", "stderr":
-				fmt.Fprintln(out, ev.Data)
-			case "done":
-				done = ev
-			}
-		}
-
-		if done.TimedOut {
-			logger.Warn("step %q timed out", step.Name)
-			return fmt.Errorf("step %q timed out", step.Name)
-		}
-		if done.ExitCode != 0 {
-			logger.Warn("step %q exited with code %d", step.Name, done.ExitCode)
-			return fmt.Errorf("step %q exited with code %d", step.Name, done.ExitCode)
-		}
-		logger.Info("step %q finished (duration=%s)", step.Name, done.Duration)
+		return err
 	}
 	return nil
 }

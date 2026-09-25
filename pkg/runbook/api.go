@@ -49,7 +49,7 @@ type execHistoryView struct {
 	Captured   map[string]string `json:"captured,omitempty"`
 }
 
-func toSessionView(sess *Session) sessionView {
+func toSessionView(sess *SessionState) sessionView {
 	history := make([]execHistoryView, len(sess.History))
 	for i, e := range sess.History {
 		history[i] = execHistoryView{
@@ -66,11 +66,12 @@ func toSessionView(sess *Session) sessionView {
 }
 
 func (s *Server) handleGetDoc(w http.ResponseWriter, _ *http.Request) {
-	doc, store := s.active.get()
-	if doc == nil {
+	sess := s.active.get()
+	if sess == nil {
 		s.writeJSON(w, http.StatusOK, map[string]any{"active": false, "workspace": s.root != ""})
 		return
 	}
+	doc := sess.Document()
 
 	blocks := make([]blockView, len(doc.Blocks))
 	for i, b := range doc.Blocks {
@@ -79,7 +80,7 @@ func (s *Server) handleGetDoc(w http.ResponseWriter, _ *http.Request) {
 			bv.Prose = renderProseHTML(b.Prose)
 		}
 		if b.Step != nil {
-			requiresConfirm, reason := RequiresConfirmation(b.Step, doc.Frontmatter.DangerPatterns)
+			requiresConfirm, reason := requiresConfirmation(b.Step, doc.Frontmatter.DangerPatterns)
 			bv.Step = &stepView{
 				Name: b.Step.Name, Lang: b.Step.Lang, Source: b.Step.Source,
 				Input: b.Step.Input, Capture: b.Step.Capture, Sensitive: b.Step.Sensitive, Confirm: b.Step.Confirm,
@@ -95,7 +96,7 @@ func (s *Server) handleGetDoc(w http.ResponseWriter, _ *http.Request) {
 		"workspace":   s.root != "",
 		"active_file": relativeToRoot(s.root, doc.Path),
 		"blocks":      blocks,
-		"session":     toSessionView(store.Get()),
+		"session":     toSessionView(sess.State()),
 	})
 }
 
@@ -110,12 +111,12 @@ func renderProseHTML(markdown string) string {
 }
 
 func (s *Server) handleGetSession(w http.ResponseWriter, _ *http.Request) {
-	_, store := s.active.get()
-	if store == nil {
+	sess := s.active.get()
+	if sess == nil {
 		s.writeJSON(w, http.StatusOK, sessionView{Vars: map[string]string{}})
 		return
 	}
-	s.writeJSON(w, http.StatusOK, toSessionView(store.Get()))
+	s.writeJSON(w, http.StatusOK, toSessionView(sess.State()))
 }
 
 // handleGetLog serves the contents of a step execution's on-disk log to the
@@ -130,14 +131,14 @@ func (s *Server) handleGetLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, store := s.active.get()
-	if store == nil {
+	sess := s.active.get()
+	if sess == nil {
 		s.writeError(w, http.StatusNotFound, "no active session")
 		return
 	}
 
 	found := false
-	for _, e := range store.Get().History {
+	for _, e := range sess.State().History {
 		if e.LogPath == path {
 			found = true
 			break
@@ -159,13 +160,13 @@ func (s *Server) handleGetLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePostSessionReset(w http.ResponseWriter, _ *http.Request) {
-	doc, store := s.active.get()
-	if doc == nil || store == nil {
+	sess := s.active.get()
+	if sess == nil {
 		s.writeError(w, http.StatusConflict, "no runbook open")
 		return
 	}
-	store.Reset()
-	s.writeJSON(w, http.StatusOK, toSessionView(store.Get()))
+	sess.Reset()
+	s.writeJSON(w, http.StatusOK, toSessionView(sess.State()))
 }
 
 type runRequest struct {
@@ -174,16 +175,9 @@ type runRequest struct {
 }
 
 func (s *Server) handlePostStepRun(w http.ResponseWriter, r *http.Request) {
-	doc, store := s.active.get()
-	if doc == nil {
+	sess := s.active.get()
+	if sess == nil {
 		s.writeError(w, http.StatusConflict, "no runbook open — select one from the file list")
-		return
-	}
-
-	name := r.PathValue("name")
-	step, ok := doc.Steps[name]
-	if !ok {
-		s.writeError(w, http.StatusNotFound, "unknown step "+name)
 		return
 	}
 
@@ -195,25 +189,9 @@ func (s *Server) handlePostStepRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	for _, inputName := range step.Input {
-		if _, ok := req.Inputs[inputName]; !ok {
-			s.writeError(w, http.StatusBadRequest, "missing required input: "+inputName)
-			return
-		}
-	}
-
-	if running, ok := s.registry.runningInfo(); ok {
-		s.writeError(w, http.StatusConflict, fmt.Sprintf("step %q is still running (execution %s)", running.stepName, running.id))
-		return
-	}
-
-	if err := CheckConfirmation(step, doc.Frontmatter.DangerPatterns, req.Confirmed); err != nil {
-		s.writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
+	name := r.PathValue("name")
 	id := NewID()
-	if running, ok := s.registry.tryReserve(id, step.Name); !ok {
+	if running, ok := s.registry.tryReserve(id, name); !ok {
 		s.writeError(w, http.StatusConflict, fmt.Sprintf("step %q is still running (execution %s)", running.stepName, running.id))
 		return
 	}
@@ -221,16 +199,24 @@ func (s *Server) handlePostStepRun(w http.ResponseWriter, r *http.Request) {
 	// Detached from the *request* context (which ends as soon as this
 	// handler returns the execution_id) but still tied to the server's own
 	// baseCtx, so a shutdown can still cancel an in-flight execution.
-	timeout := EffectiveTimeout(step, doc.Frontmatter.DefaultTimeout)
-	_, events, cancel, err := s.engine.Run(s.baseCtx, step, req.Inputs, timeout, store)
+	events, cancel, err := sess.Start(s.baseCtx, name, req.Inputs, req.Confirmed)
 	if err != nil {
 		s.registry.releaseReservation(id)
-		s.writeError(w, http.StatusBadRequest, err.Error())
+		s.writeError(w, statusFor(err), err.Error())
 		return
 	}
 
-	s.registry.start(id, step.Name, cancel, events, s.logger)
+	s.registry.start(id, name, cancel, events, s.logger)
 	s.writeJSON(w, http.StatusAccepted, map[string]string{"execution_id": id})
+}
+
+// statusFor maps a runbook *Error to the HTTP status a client should see.
+func statusFor(err error) int {
+	var rbErr *Error
+	if errors.As(err, &rbErr) && rbErr.Type == ErrorTypeNotFound {
+		return http.StatusNotFound
+	}
+	return http.StatusBadRequest
 }
 
 func (s *Server) writeJSON(w http.ResponseWriter, status int, v any) {

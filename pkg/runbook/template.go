@@ -15,7 +15,7 @@ var (
 // references with their literal values as plain text — no shell-escaping.
 // This is the documented tradeoff vs. input=/capture= (project-brief.md §13):
 // callers must treat referenced values as trusted before using this path.
-func Substitute(source string, sess *Session) (string, error) {
+func Substitute(source string, sess *SessionState) (string, error) {
 	var refErr error
 
 	out := stepsRefRe.ReplaceAllStringFunc(source, func(m string) string {
@@ -58,7 +58,7 @@ func Substitute(source string, sess *Session) (string, error) {
 	return out, nil
 }
 
-func lastExecution(sess *Session, stepName string) (Execution, bool) {
+func lastExecution(sess *SessionState, stepName string) (Execution, bool) {
 	for i := len(sess.History) - 1; i >= 0; i-- {
 		if sess.History[i].StepName == stepName {
 			return sess.History[i], true

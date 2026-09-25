@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
@@ -13,7 +12,7 @@ import (
 )
 
 func TestHandleCancelExecution_RunningExecutionReturns202AndCancelsIt(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=slow}\nsleep 30\n```\n")
+	srv := newTestServer(t, "```bash {name=slow}\nsleep 30\n```\n")
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
@@ -38,18 +37,12 @@ func TestHandleCancelExecution_RunningExecutionReturns202AndCancelsIt(t *testing
 }
 
 func TestHandleCancelExecution_AlreadyFinishedExecutionIsNoOp(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+	srv := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
 	execID := startRun(t, ts, "hello")
-	execRec, ok := srv.registry.get(execID)
-	require.True(t, ok)
-	select {
-	case <-execRec.done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("execution did not finish in time")
-	}
+	lastEventOf(t, wsDial(t, ts, execID)) // wait until the execution has finished
 
 	req := httptest.NewRequest(http.MethodPost, "/api/executions/"+execID+"/cancel", nil)
 	rec := httptest.NewRecorder()
@@ -59,7 +52,7 @@ func TestHandleCancelExecution_AlreadyFinishedExecutionIsNoOp(t *testing.T) {
 }
 
 func TestHandleCancelExecution_UnknownIDReturns404(t *testing.T) {
-	srv, _ := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+	srv := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
 
 	req := httptest.NewRequest(http.MethodPost, "/api/executions/does-not-exist/cancel", nil)
 	rec := httptest.NewRecorder()

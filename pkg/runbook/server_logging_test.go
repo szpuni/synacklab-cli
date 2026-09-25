@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,12 +15,37 @@ import (
 	rblog "synacklab/pkg/log"
 )
 
-func newLoggingTestServer(t *testing.T, src string) (*Server, *bytes.Buffer) {
+// syncBuffer is a bytes.Buffer safe to read while the server's goroutines
+// are still writing log lines to it.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func (b *syncBuffer) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf.Reset()
+}
+
+func newLoggingTestServer(t *testing.T, src string) (*Server, *syncBuffer) {
 	t.Helper()
-	srv, _ := newTestServer(t, src)
-	var buf bytes.Buffer
-	srv.SetLogger(rblog.New(&buf, rblog.LevelInfo))
-	return srv, &buf
+	srv := newTestServer(t, src)
+	buf := &syncBuffer{}
+	srv.SetLogger(rblog.New(buf, rblog.LevelInfo))
+	return srv, buf
 }
 
 func TestServer_LogsHTTPRequestsAtInfo(t *testing.T) {
@@ -39,12 +64,7 @@ func TestServer_LogsHTTPRequestsAtInfo(t *testing.T) {
 func TestServer_LogsStepStartAndSuccessfulFinishAtInfo(t *testing.T) {
 	srv, buf := newLoggingTestServer(t, "```bash {name=hello}\necho hi\n```\n")
 
-	req := httptest.NewRequest(http.MethodPost, "/api/steps/hello/run", bytes.NewReader([]byte(`{}`)))
-	rec := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec, req)
-	require.Equal(t, http.StatusAccepted, rec.Code)
-
-	waitForNoRunningExecutions(t, srv)
+	runViaAPI(t, serve(t, srv), "hello")
 
 	out := buf.String()
 	assert.Contains(t, out, `"hello"`)
@@ -55,16 +75,11 @@ func TestServer_LogsStepStartAndSuccessfulFinishAtInfo(t *testing.T) {
 func TestServer_LogsNonZeroExitAtWarn(t *testing.T) {
 	srv, buf := newLoggingTestServer(t, "```bash {name=fails}\nexit 3\n```\n")
 
-	req := httptest.NewRequest(http.MethodPost, "/api/steps/fails/run", bytes.NewReader([]byte(`{}`)))
-	rec := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec, req)
-	require.Equal(t, http.StatusAccepted, rec.Code)
-
-	waitForNoRunningExecutions(t, srv)
+	runViaAPI(t, serve(t, srv), "fails")
 
 	out := buf.String()
 	assert.Contains(t, out, "WARN")
-	assert.Contains(t, out, "exit")
+	assert.Contains(t, out, "exited with code 3")
 }
 
 func TestServer_LogsValidationFailureAtWarn(t *testing.T) {
@@ -81,10 +96,10 @@ func TestServer_LogsValidationFailureAtWarn(t *testing.T) {
 func TestServer_LogsOpenSuccessAtInfoAndFailureAtWarn(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "deploy.md"), []byte("```bash {name=hello}\necho hi\n```\n"), 0o644))
-	srv := NewServer(nil, nil, NewEngine(nil))
-	srv.EnableWorkspace(root, "")
-	var buf bytes.Buffer
-	srv.SetLogger(rblog.New(&buf, rblog.LevelInfo))
+	srv := NewServer(nil, SessionOptions{})
+	srv.EnableWorkspace(root)
+	buf := &syncBuffer{}
+	srv.SetLogger(rblog.New(buf, rblog.LevelInfo))
 
 	okReq := httptest.NewRequest(http.MethodPost, "/api/open", bytes.NewReader([]byte(`{"file":"deploy.md"}`)))
 	okRec := httptest.NewRecorder()
@@ -99,32 +114,4 @@ func TestServer_LogsOpenSuccessAtInfoAndFailureAtWarn(t *testing.T) {
 	srv.Routes().ServeHTTP(badRec, badReq)
 	require.Equal(t, http.StatusNotFound, badRec.Code)
 	assert.Contains(t, buf.String(), "WARN")
-}
-
-// waitForNoRunningExecutions polls until every registered execution's done
-// channel is closed, so tests can assert on log output written by the
-// registry's background drain goroutine without a fixed sleep.
-func waitForNoRunningExecutions(t *testing.T, srv *Server) {
-	t.Helper()
-	deadline := time.After(2 * time.Second)
-	for {
-		srv.registry.mu.Lock()
-		allDone := true
-		for _, rec := range srv.registry.entries {
-			select {
-			case <-rec.done:
-			default:
-				allDone = false
-			}
-		}
-		srv.registry.mu.Unlock()
-		if allDone {
-			return
-		}
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for executions to finish")
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
 }

@@ -3,63 +3,52 @@ package runbook
 import (
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCapture_BashExportsBecomeCapturedAndHiddenFromOutput(t *testing.T) {
-	store := NewSessionStore("s1", "/tmp/runbook.md", t.TempDir())
-	step := &Step{Name: "get", Lang: "bash", Source: "echo visible\nexport A=1 B='x=y'\n", Capture: []string{"A", "B"}}
+	sess := openTestSession(t, "```bash {name=get, capture=A,B}\necho visible\nexport A=1 B='x=y'\n```\n", SessionOptions{})
 
-	stdout, _, done := runStep(t, step, nil, 5*time.Second, store)
+	stdout, _, done := runToCompletion(t, sess, "get", nil)
 
 	assert.Equal(t, []string{"visible"}, stdout, "sentinel lines must never reach the output stream")
 	assert.Equal(t, map[string]string{"A": "1", "B": "x=y"}, done.Captured)
-	require.Len(t, store.Get().History, 1)
-	assert.Equal(t, "visible\n", store.Get().History[0].Stdout, "sentinel lines must not leak into {{steps.X.stdout}}")
+	require.Len(t, sess.State().History, 1)
+	assert.Equal(t, "visible\n", sess.State().History[0].Stdout, "sentinel lines must not leak into {{steps.X.stdout}}")
 }
 
 func TestCapture_PythonEnvironWritesBecomeCaptured(t *testing.T) {
-	store := NewSessionStore("s1", "/tmp/runbook.md", t.TempDir())
-	step := &Step{Name: "get", Lang: "python", Source: "import os\nprint('visible')\nos.environ['A'] = '1'\n", Capture: []string{"A"}}
+	sess := openTestSession(t, "```python {name=get, capture=A}\nimport os\nprint('visible')\nos.environ['A'] = '1'\n```\n", SessionOptions{})
 
-	stdout, _, done := runStep(t, step, nil, 5*time.Second, store)
+	stdout, _, done := runToCompletion(t, sess, "get", nil)
 
 	assert.Equal(t, []string{"visible"}, stdout)
 	assert.Equal(t, map[string]string{"A": "1"}, done.Captured)
 }
 
 func TestCapture_UnsetVariableIsCapturedAsEmpty(t *testing.T) {
-	store := NewSessionStore("s1", "/tmp/runbook.md", t.TempDir())
-	step := &Step{Name: "get", Lang: "bash", Source: "true\n", Capture: []string{"NEVER_SET_ANYWHERE"}}
+	sess := openTestSession(t, "```bash {name=get, capture=NEVER_SET_ANYWHERE}\ntrue\n```\n", SessionOptions{})
 
-	_, _, done := runStep(t, step, nil, 5*time.Second, store)
+	_, _, done := runToCompletion(t, sess, "get", nil)
 
 	assert.Equal(t, map[string]string{"NEVER_SET_ANYWHERE": ""}, done.Captured)
 }
 
 func TestCapture_PythonSetCwdMovesSessionAndStaysHidden(t *testing.T) {
-	tmp := t.TempDir()
-	store := NewSessionStore("s1", "/tmp/runbook.md", tmp)
-	step := &Step{Name: "cd", Lang: "python", Source: "import os\nos.mkdir('sub')\nos.chdir('sub')\n", SetCwd: true}
+	sess := openTestSession(t, "```python {name=cd, set_cwd=true}\nimport os\nos.mkdir('sub')\nos.chdir('sub')\n```\n", SessionOptions{})
 
-	stdout, _, _ := runStep(t, step, nil, 5*time.Second, store)
+	stdout, _, _ := runToCompletion(t, sess, "cd", nil)
 
 	assert.Empty(t, stdout)
-	resolved, err := filepath.EvalSymlinks(store.Get().Cwd)
-	require.NoError(t, err)
-	expected, err := filepath.EvalSymlinks(filepath.Join(tmp, "sub"))
-	require.NoError(t, err)
-	assert.Equal(t, expected, resolved)
+	samePath(t, filepath.Join(sess.Document().Dir, "sub"), sess.State().Cwd)
 }
 
 func TestCapture_WithoutCaptureOrSetCwdOutputIsUntouched(t *testing.T) {
-	store := NewSessionStore("s1", "/tmp/runbook.md", t.TempDir())
-	step := &Step{Name: "plain", Lang: "bash", Source: "echo one\necho two\n"}
+	sess := openTestSession(t, "```bash {name=plain}\necho one\necho two\n```\n", SessionOptions{})
 
-	stdout, _, done := runStep(t, step, nil, 5*time.Second, store)
+	stdout, _, done := runToCompletion(t, sess, "plain", nil)
 
 	assert.Equal(t, []string{"one", "two"}, stdout)
 	assert.Empty(t, done.Captured)

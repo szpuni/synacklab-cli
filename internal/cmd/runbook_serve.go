@@ -165,18 +165,17 @@ func buildRunbookServer(root, initialFile, cwdFlag string) (*runbook.Server, str
 		}
 	}
 
-	var doc *runbook.Document
-	var store runbook.SessionStore
+	opts := runbook.SessionOptions{Cwd: defaultCwd, Logs: runbook.NewFileLogWriter(".synacklab")}
 
+	var sess *runbook.Session
 	if initialFile != "" {
-		if doc, store, err = runbook.OpenRunbook(initialFile, defaultCwd); err != nil {
+		if sess, err = runbook.OpenSession(initialFile, opts); err != nil {
 			return nil, "", fmt.Errorf("failed to open %s: %w", initialFile, err)
 		}
 	}
 
-	engine := runbook.NewEngine(runbook.NewFileLogWriter(".synacklab"))
-	srv := runbook.NewServer(doc, store, engine)
-	srv.EnableWorkspace(absRoot, defaultCwd)
+	srv := runbook.NewServer(sess, opts)
+	srv.EnableWorkspace(absRoot)
 
 	label := absRoot
 	if initialFile != "" {

@@ -8,7 +8,7 @@ import (
 )
 
 func TestSubstitute_VarsReference(t *testing.T) {
-	sess := &Session{Vars: map[string]string{"PUBLIC_IP": "1.2.3.4"}}
+	sess := &SessionState{Vars: map[string]string{"PUBLIC_IP": "1.2.3.4"}}
 
 	out, err := Substitute("echo {{vars.PUBLIC_IP}}", sess)
 	require.NoError(t, err)
@@ -16,7 +16,7 @@ func TestSubstitute_VarsReference(t *testing.T) {
 }
 
 func TestSubstitute_StepsStdoutAndExitCode(t *testing.T) {
-	sess := &Session{History: []Execution{
+	sess := &SessionState{History: []Execution{
 		{StepName: "get_ip", Stdout: "1.2.3.4\n", ExitCode: 0},
 	}}
 
@@ -26,7 +26,7 @@ func TestSubstitute_StepsStdoutAndExitCode(t *testing.T) {
 }
 
 func TestSubstitute_UsesMostRecentExecutionOfStep(t *testing.T) {
-	sess := &Session{History: []Execution{
+	sess := &SessionState{History: []Execution{
 		{StepName: "x", Stdout: "old"},
 		{StepName: "x", Stdout: "new"},
 	}}
@@ -37,7 +37,7 @@ func TestSubstitute_UsesMostRecentExecutionOfStep(t *testing.T) {
 }
 
 func TestSubstitute_UnknownStepReferenceIsError(t *testing.T) {
-	sess := &Session{}
+	sess := &SessionState{}
 
 	_, err := Substitute("{{steps.missing.stdout}}", sess)
 	require.Error(t, err)
@@ -45,7 +45,7 @@ func TestSubstitute_UnknownStepReferenceIsError(t *testing.T) {
 }
 
 func TestSubstitute_UnknownVarReferenceIsError(t *testing.T) {
-	sess := &Session{Vars: map[string]string{}}
+	sess := &SessionState{Vars: map[string]string{}}
 
 	_, err := Substitute("{{vars.missing}}", sess)
 	require.Error(t, err)
@@ -53,7 +53,7 @@ func TestSubstitute_UnknownVarReferenceIsError(t *testing.T) {
 }
 
 func TestSubstitute_NoShellEscaping(t *testing.T) {
-	sess := &Session{Vars: map[string]string{"X": `$(rm -rf /); echo "pwned"`}}
+	sess := &SessionState{Vars: map[string]string{"X": `$(rm -rf /); echo "pwned"`}}
 
 	out, err := Substitute("run {{vars.X}}", sess)
 	require.NoError(t, err)
@@ -61,7 +61,7 @@ func TestSubstitute_NoShellEscaping(t *testing.T) {
 }
 
 func TestSubstitute_NoTemplateReferencesIsNoop(t *testing.T) {
-	sess := &Session{}
+	sess := &SessionState{}
 
 	out, err := Substitute("echo plain script\n", sess)
 	require.NoError(t, err)

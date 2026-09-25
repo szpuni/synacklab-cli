@@ -30,46 +30,44 @@ func webRoot() http.FileSystem {
 	return http.FS(sub)
 }
 
-// Server wires the REST/WebSocket API around a parsed Document, its Session,
-// and an Engine. One Server per running `serve` process (Requirement 14.1).
+// Server wires the REST/WebSocket API around the active Session. One Server
+// per running `serve` process (Requirement 14.1).
 type Server struct {
-	active     *activeDoc
-	engine     Engine
-	registry   *executionRegistry
-	upgrader   websocket.Upgrader
-	root       string // "" disables the file-browser endpoints (/api/files, /api/open)
-	defaultCwd string // overrides a newly-opened file's own directory as its session cwd, if set
-	logger     *rblog.Logger
-	baseCtx    context.Context // parent for every step execution; canceling it kills any in-flight step
+	active   *activeDoc
+	opts     SessionOptions // how a runbook opened via /api/open is set up
+	registry *executionRegistry
+	upgrader websocket.Upgrader
+	root     string // "" disables the file-browser endpoints (/api/files, /api/open)
+	logger   *rblog.Logger
+	baseCtx  context.Context // parent for every step execution; canceling it kills any in-flight step
 }
 
-// activeDoc holds the currently-open Document/Session, swappable at runtime
-// via /api/open when a Server is in workspace (directory) mode. Both may be
-// nil, meaning nothing is open yet.
+// activeDoc holds the currently-open Session, swappable at runtime via
+// /api/open when a Server is in workspace (directory) mode. It may be nil,
+// meaning nothing is open yet.
 type activeDoc struct {
-	mu    sync.RWMutex
-	doc   *Document
-	store SessionStore
+	mu   sync.RWMutex
+	sess *Session
 }
 
-func (a *activeDoc) get() (*Document, SessionStore) {
+func (a *activeDoc) get() *Session {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-	return a.doc, a.store
+	return a.sess
 }
 
-func (a *activeDoc) set(doc *Document, store SessionStore) {
+func (a *activeDoc) set(sess *Session) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.doc, a.store = doc, store
+	a.sess = sess
 }
 
-// NewServer creates a Server around doc/store. Both may be nil (nothing
-// open yet) — pair with EnableWorkspace so the frontend's file browser can
-// open one.
-func NewServer(doc *Document, store SessionStore, engine Engine) *Server {
+// NewServer creates a Server around sess, which may be nil (nothing open
+// yet) — pair with EnableWorkspace so the frontend's file browser can open
+// one. opts sets up every runbook opened later via /api/open.
+func NewServer(sess *Session, opts SessionOptions) *Server {
 	return &Server{
-		active: &activeDoc{doc: doc, store: store}, engine: engine, registry: newExecutionRegistry(),
+		active: &activeDoc{sess: sess}, opts: opts, registry: newExecutionRegistry(),
 		// CheckOrigin is permissive: serve binds 127.0.0.1 by default and v1
 		// has no auth story at all (Requirement 13.3), so origin-checking
 		// wouldn't add real protection over what a local tool already accepts.
@@ -99,12 +97,9 @@ func (s *Server) SetBaseContext(ctx context.Context) {
 
 // EnableWorkspace turns on the left-pane file browser rooted at root: GET
 // /api/files lists its *.md files and POST /api/open switches the active
-// document to one of them. defaultCwd, if non-empty, overrides a newly
-// opened file's own directory as its session's initial cwd (mirroring
-// serve's --cwd flag). Call before Routes().
-func (s *Server) EnableWorkspace(root, defaultCwd string) {
+// document to one of them. Call before Routes().
+func (s *Server) EnableWorkspace(root string) {
 	s.root = root
-	s.defaultCwd = defaultCwd
 }
 
 func (s *Server) Routes() http.Handler {
@@ -265,29 +260,25 @@ func (r *executionRegistry) start(id, stepName string, cancel context.CancelFunc
 
 	go func() {
 		for ev := range events {
-			rec.publish(ev)
-			if ev.Type != "done" {
+			if ev.Type != EventDone {
+				rec.publish(ev)
 				continue
 			}
-			// Log before signaling done, so anything waiting on rec.done
-			// (a caller, or a test) never observes completion before the
-			// corresponding log line has actually been written.
-			switch {
-			case ev.Canceled:
-				logger.Warn("step %q canceled (execution %s, duration=%s)", stepName, id, ev.Duration)
-			case ev.TimedOut:
-				logger.Warn("step %q timed out (execution %s, duration=%s)", stepName, id, ev.Duration)
-			case ev.ExitCode != 0:
-				logger.Warn("step %q exited with code %d (execution %s, duration=%s)", stepName, ev.ExitCode, id, ev.Duration)
-			default:
+			// Log and free the slot before publishing done, so a client
+			// that has seen done can immediately run the next step, and
+			// never observes a console missing this step's log line.
+			if failure := ev.failure(); failure != "" {
+				logger.Warn("step %q %s (execution %s, duration=%s)", stepName, failure, id, ev.Duration)
+			} else {
 				logger.Info("step %q finished (execution %s, duration=%s)", stepName, id, ev.Duration)
 			}
-			close(rec.done)
 			r.mu.Lock()
 			if r.running != nil && r.running.id == id {
 				r.running = nil
 			}
 			r.mu.Unlock()
+			rec.publish(ev)
+			close(rec.done)
 		}
 	}()
 }
