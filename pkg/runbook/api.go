@@ -164,7 +164,7 @@ func (s *Server) handlePostSessionReset(w http.ResponseWriter, _ *http.Request) 
 		s.writeError(w, http.StatusConflict, "no runbook open")
 		return
 	}
-	store.Reset(doc.Dir)
+	store.Reset()
 	s.writeJSON(w, http.StatusOK, toSessionView(store.Get()))
 }
 

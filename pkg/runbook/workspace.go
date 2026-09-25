@@ -2,6 +2,7 @@ package runbook
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -155,28 +156,16 @@ func (s *Server) handlePostOpen(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	info, err := os.Stat(absPath)
-	if err != nil || info.IsDir() {
+	doc, store, err := OpenRunbook(absPath, s.defaultCwd)
+	if err != nil {
+		var rbErr *Error
+		if errors.As(err, &rbErr) && rbErr.Type == ErrorTypeParse {
+			s.writeError(w, http.StatusBadRequest, "failed to parse "+req.File+": "+err.Error())
+			return
+		}
 		s.writeError(w, http.StatusNotFound, "file not found: "+req.File)
 		return
 	}
-
-	source, err := os.ReadFile(absPath)
-	if err != nil {
-		s.writeError(w, http.StatusNotFound, "failed to read "+req.File+": "+err.Error())
-		return
-	}
-	doc, err := (&GoldmarkParser{}).Parse(source, absPath)
-	if err != nil {
-		s.writeError(w, http.StatusBadRequest, "failed to parse "+req.File+": "+err.Error())
-		return
-	}
-
-	cwd := s.defaultCwd
-	if cwd == "" {
-		cwd = filepath.Dir(absPath)
-	}
-	store := NewSessionStore(NewID(), absPath, cwd)
 	s.active.set(doc, store)
 
 	relPath := relativeToRoot(s.root, absPath)

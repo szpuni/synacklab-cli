@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -58,24 +57,14 @@ func runRunbookRun(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	source, err := os.ReadFile(docPath)
+	doc, store, err := runbook.OpenRunbook(docPath, "")
 	if err != nil {
-		return fmt.Errorf("failed to read %s: %w", docPath, err)
-	}
-
-	doc, err := (&runbook.GoldmarkParser{}).Parse(source, docPath)
-	if err != nil {
-		return fmt.Errorf("failed to parse %s: %w", docPath, err)
+		return fmt.Errorf("failed to open %s: %w", docPath, err)
 	}
 
 	sets, err := parseSetFlags(runSetFlags)
 	if err != nil {
 		return err
-	}
-
-	absCwd, err := filepath.Abs(doc.Dir)
-	if err != nil {
-		return fmt.Errorf("failed to resolve working directory: %w", err)
 	}
 
 	cfg, err := config.LoadConfig()
@@ -87,7 +76,6 @@ func runRunbookRun(_ *cobra.Command, args []string) error {
 		return err
 	}
 
-	store := runbook.NewSessionStore(runbook.NewID(), docPath, absCwd)
 	engine := runbook.NewEngine(runbook.NewFileLogWriter(".synacklab"))
 
 	// SIGINT/SIGTERM cancels the currently-running step's process group

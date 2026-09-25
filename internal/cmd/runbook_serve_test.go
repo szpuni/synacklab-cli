@@ -145,3 +145,27 @@ func TestBuildRunbookServer_ActiveFileIsReportedWithRelativeArgs(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	assert.Equal(t, "RUNBOOK.md", got.ActiveFile)
 }
+
+// TestBuildRunbookServer_ResetRestoresCwdFlag is a regression test: reset
+// used to put the session back in the document's own directory, silently
+// dropping serve's --cwd override.
+func TestBuildRunbookServer_ResetRestoresCwdFlag(t *testing.T) {
+	dir := t.TempDir()
+	cwdFlag := t.TempDir()
+	docPath := filepath.Join(dir, "deploy.md")
+	require.NoError(t, os.WriteFile(docPath, []byte("```bash {name=hello}\necho hi\n```\n"), 0o644))
+
+	srv, _, err := buildRunbookServer(dir, docPath, cwdFlag)
+	require.NoError(t, err)
+	routes := srv.Routes()
+
+	rec := httptest.NewRecorder()
+	routes.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/session/reset", nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got struct {
+		Cwd string `json:"cwd"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	assert.Equal(t, cwdFlag, got.Cwd)
+}

@@ -8,17 +8,20 @@ type SessionStore interface {
 	SetVar(key, value string)
 	SetCwd(path string)
 	AppendHistory(e Execution)
-	Reset(defaultCwd string)
+	Reset()
 }
 
 type memorySessionStore struct {
-	mu   sync.Mutex
-	sess Session
+	mu         sync.Mutex
+	sess       Session
+	defaultCwd string
 }
 
-// NewSessionStore creates the one Session for a running serve process.
+// NewSessionStore creates a Session starting in defaultCwd, which is also
+// where Reset puts it back.
 func NewSessionStore(id, docPath, defaultCwd string) SessionStore {
 	return &memorySessionStore{
+		defaultCwd: defaultCwd,
 		sess: Session{
 			ID:      id,
 			DocPath: docPath,
@@ -63,12 +66,12 @@ func (s *memorySessionStore) AppendHistory(e Execution) {
 	s.sess.History = append(s.sess.History, e)
 }
 
-// Reset clears vars and resets cwd to the document default. Execution
+// Reset clears vars and puts cwd back to the session's default. Execution
 // history is left intact — it's an audit trail, and each execution is
 // already logged to disk independently of session state (Requirement 4).
-func (s *memorySessionStore) Reset(defaultCwd string) {
+func (s *memorySessionStore) Reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sess.Vars = map[string]string{}
-	s.sess.Cwd = defaultCwd
+	s.sess.Cwd = s.defaultCwd
 }

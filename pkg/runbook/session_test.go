@@ -44,7 +44,7 @@ func TestSessionStore_ResetClearsVarsAndCwdButKeepsHistory(t *testing.T) {
 	s.SetCwd("/tmp/subdir")
 	s.AppendHistory(Execution{StepName: "first"})
 
-	s.Reset("/tmp")
+	s.Reset()
 
 	got := s.Get()
 	assert.Empty(t, got.Vars)

@@ -309,3 +309,26 @@ func TestHandleGetDoc_IncludesActiveFileAfterOpen(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	assert.Equal(t, "sub/deploy.md", got.ActiveFile)
 }
+
+func TestHandlePostOpen_ResetRestoresConfiguredDefaultCwd(t *testing.T) {
+	root := t.TempDir()
+	cwdOverride := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "deploy.md"), []byte("```bash {name=hello}\necho hi\n```\n"), 0o644))
+	srv := NewServer(nil, nil, NewEngine(nil))
+	srv.EnableWorkspace(root, cwdOverride)
+	routes := srv.Routes()
+
+	openRec := httptest.NewRecorder()
+	routes.ServeHTTP(openRec, httptest.NewRequest(http.MethodPost, "/api/open", bytes.NewReader([]byte(`{"file":"deploy.md"}`))))
+	require.Equal(t, http.StatusOK, openRec.Code)
+
+	resetRec := httptest.NewRecorder()
+	routes.ServeHTTP(resetRec, httptest.NewRequest(http.MethodPost, "/api/session/reset", nil))
+	require.Equal(t, http.StatusOK, resetRec.Code)
+
+	var got struct {
+		Cwd string `json:"cwd"`
+	}
+	require.NoError(t, json.Unmarshal(resetRec.Body.Bytes(), &got))
+	assert.Equal(t, cwdOverride, got.Cwd)
+}
