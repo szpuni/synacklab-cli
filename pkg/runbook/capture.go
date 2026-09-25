@@ -40,27 +40,30 @@ func buildTrailer(lang string, capture []string, setCwd bool) string {
 	return b.String()
 }
 
-// parseCaptureOutput strips __SYNACLAB_CAP__/__SYNACLAB_CWD__ sentinel lines
-// from stdout, returning the cleaned output plus the captured vars and cwd.
-func parseCaptureOutput(stdout string) (cleaned string, captured map[string]string, cwd string, cwdFound bool) {
-	captured = map[string]string{}
-	lines := strings.Split(stdout, "\n")
-	kept := make([]string, 0, len(lines))
+// captureResult accumulates what a step exported through its trailer's
+// sentinel lines: captured vars, and its final cwd if set_cwd asked for it.
+type captureResult struct {
+	vars     map[string]string
+	cwd      string
+	cwdFound bool
+}
 
-	for _, line := range lines {
-		switch {
-		case strings.HasPrefix(line, capturePrefix):
-			rest := line[len(capturePrefix):]
-			if idx := strings.Index(rest, "="); idx >= 0 {
-				captured[rest[:idx]] = rest[idx+1:]
-			}
-		case strings.HasPrefix(line, cwdPrefix):
-			cwd = line[len(cwdPrefix):]
-			cwdFound = true
-		default:
-			kept = append(kept, line)
+func newCaptureResult() *captureResult {
+	return &captureResult{vars: map[string]string{}}
+}
+
+// consume records line if it is a sentinel and reports whether it was one,
+// so the caller keeps sentinel lines out of the step's visible output.
+func (c *captureResult) consume(line string) bool {
+	if rest, ok := strings.CutPrefix(line, capturePrefix); ok {
+		if name, value, found := strings.Cut(rest, "="); found {
+			c.vars[name] = value
 		}
+		return true
 	}
-
-	return strings.Join(kept, "\n"), captured, cwd, cwdFound
+	if rest, ok := strings.CutPrefix(line, cwdPrefix); ok {
+		c.cwd, c.cwdFound = rest, true
+		return true
+	}
+	return false
 }

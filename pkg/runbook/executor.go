@@ -113,15 +113,14 @@ func (e *ProcessEngine) wait(
 	defer cancel()
 	defer close(events)
 
-	captured := map[string]string{}
-	cwd, cwdFound := "", false
+	captured := newCaptureResult()
 	var rawStdout, rawStderr strings.Builder
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		streamStdout(stdoutPipe, events, captured, &cwd, &cwdFound, &rawStdout)
+		streamStdout(stdoutPipe, events, captured, &rawStdout)
 	}()
 	go func() {
 		defer wg.Done()
@@ -136,15 +135,15 @@ func (e *ProcessEngine) wait(
 	execution.Canceled = !execution.TimedOut && errors.Is(runCtx.Err(), context.Canceled)
 	execution.Stdout = rawStdout.String()
 	execution.Stderr = rawStderr.String()
-	execution.Captured = captured
+	execution.Captured = captured.vars
 	execution.ExitCode = exitCodeFrom(waitErr)
 
-	for name, value := range captured {
+	for name, value := range captured.vars {
 		store.SetVar(step.Name+"."+name, value)
 		store.SetVar(name, value)
 	}
-	if step.SetCwd && cwdFound {
-		store.SetCwd(cwd)
+	if step.SetCwd && captured.cwdFound {
+		store.SetCwd(captured.cwd)
 	}
 
 	if e.logWriter != nil {
@@ -162,29 +161,21 @@ func (e *ProcessEngine) wait(
 		Duration: execution.Duration,
 		TimedOut: execution.TimedOut,
 		Canceled: execution.Canceled,
-		Captured: captured,
+		Captured: captured.vars,
 	}
 }
 
-func streamStdout(r io.Reader, events chan<- Event, captured map[string]string, cwd *string, cwdFound *bool, rawStdout *strings.Builder) {
+func streamStdout(r io.Reader, events chan<- Event, captured *captureResult, rawStdout *strings.Builder) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
-		switch {
-		case strings.HasPrefix(line, capturePrefix):
-			rest := line[len(capturePrefix):]
-			if idx := strings.Index(rest, "="); idx >= 0 {
-				captured[rest[:idx]] = rest[idx+1:]
-			}
-		case strings.HasPrefix(line, cwdPrefix):
-			*cwd = line[len(cwdPrefix):]
-			*cwdFound = true
-		default:
-			events <- Event{Type: "stdout", Data: line}
-			rawStdout.WriteString(line)
-			rawStdout.WriteString("\n")
+		if captured.consume(line) {
+			continue
 		}
+		events <- Event{Type: "stdout", Data: line}
+		rawStdout.WriteString(line)
+		rawStdout.WriteString("\n")
 	}
 }
 

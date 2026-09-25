@@ -1,72 +1,66 @@
 package runbook
 
 import (
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestBuildTrailer_Bash(t *testing.T) {
-	trailer := buildTrailer("bash", []string{"A", "B"}, false)
-	assert.Equal(t, "echo \"__SYNACLAB_CAP__A=${A}\"\necho \"__SYNACLAB_CAP__B=${B}\"\n", trailer)
+func TestCapture_BashExportsBecomeCapturedAndHiddenFromOutput(t *testing.T) {
+	store := NewSessionStore("s1", "/tmp/runbook.md", t.TempDir())
+	step := &Step{Name: "get", Lang: "bash", Source: "echo visible\nexport A=1 B='x=y'\n", Capture: []string{"A", "B"}}
+
+	stdout, _, done := runStep(t, step, nil, 5*time.Second, store)
+
+	assert.Equal(t, []string{"visible"}, stdout, "sentinel lines must never reach the output stream")
+	assert.Equal(t, map[string]string{"A": "1", "B": "x=y"}, done.Captured)
+	require.Len(t, store.Get().History, 1)
+	assert.Equal(t, "visible\n", store.Get().History[0].Stdout, "sentinel lines must not leak into {{steps.X.stdout}}")
 }
 
-func TestBuildTrailer_BashWithSetCwd(t *testing.T) {
-	trailer := buildTrailer("bash", nil, true)
-	assert.Equal(t, "echo \"__SYNACLAB_CWD__$PWD\"\n", trailer)
+func TestCapture_PythonEnvironWritesBecomeCaptured(t *testing.T) {
+	store := NewSessionStore("s1", "/tmp/runbook.md", t.TempDir())
+	step := &Step{Name: "get", Lang: "python", Source: "import os\nprint('visible')\nos.environ['A'] = '1'\n", Capture: []string{"A"}}
+
+	stdout, _, done := runStep(t, step, nil, 5*time.Second, store)
+
+	assert.Equal(t, []string{"visible"}, stdout)
+	assert.Equal(t, map[string]string{"A": "1"}, done.Captured)
 }
 
-func TestBuildTrailer_Python(t *testing.T) {
-	trailer := buildTrailer("python", []string{"A"}, false)
-	assert.Equal(t, "import os\nprint(f\"__SYNACLAB_CAP__A={os.environ.get('A','')}\")\n", trailer)
+func TestCapture_UnsetVariableIsCapturedAsEmpty(t *testing.T) {
+	store := NewSessionStore("s1", "/tmp/runbook.md", t.TempDir())
+	step := &Step{Name: "get", Lang: "bash", Source: "true\n", Capture: []string{"NEVER_SET_ANYWHERE"}}
+
+	_, _, done := runStep(t, step, nil, 5*time.Second, store)
+
+	assert.Equal(t, map[string]string{"NEVER_SET_ANYWHERE": ""}, done.Captured)
 }
 
-func TestBuildTrailer_PythonWithSetCwdOnly(t *testing.T) {
-	trailer := buildTrailer("python", nil, true)
-	assert.Equal(t, "import os\nprint(f\"__SYNACLAB_CWD__{os.getcwd()}\")\n", trailer)
+func TestCapture_PythonSetCwdMovesSessionAndStaysHidden(t *testing.T) {
+	tmp := t.TempDir()
+	store := NewSessionStore("s1", "/tmp/runbook.md", tmp)
+	step := &Step{Name: "cd", Lang: "python", Source: "import os\nos.mkdir('sub')\nos.chdir('sub')\n", SetCwd: true}
+
+	stdout, _, _ := runStep(t, step, nil, 5*time.Second, store)
+
+	assert.Empty(t, stdout)
+	resolved, err := filepath.EvalSymlinks(store.Get().Cwd)
+	require.NoError(t, err)
+	expected, err := filepath.EvalSymlinks(filepath.Join(tmp, "sub"))
+	require.NoError(t, err)
+	assert.Equal(t, expected, resolved)
 }
 
-func TestBuildTrailer_NoCaptureNoCwdIsEmpty(t *testing.T) {
-	assert.Empty(t, buildTrailer("bash", nil, false))
-	assert.Empty(t, buildTrailer("python", nil, false))
-}
+func TestCapture_WithoutCaptureOrSetCwdOutputIsUntouched(t *testing.T) {
+	store := NewSessionStore("s1", "/tmp/runbook.md", t.TempDir())
+	step := &Step{Name: "plain", Lang: "bash", Source: "echo one\necho two\n"}
 
-func TestParseCaptureOutput_ExtractsAndStripsSentinelLines(t *testing.T) {
-	stdout := "hello\n__SYNACLAB_CAP__PUBLIC_IP=1.2.3.4\nworld\n"
+	stdout, _, done := runStep(t, step, nil, 5*time.Second, store)
 
-	cleaned, captured, cwd, cwdFound := parseCaptureOutput(stdout)
-
-	assert.Equal(t, "hello\nworld\n", cleaned)
-	assert.Equal(t, map[string]string{"PUBLIC_IP": "1.2.3.4"}, captured)
-	assert.False(t, cwdFound)
-	assert.Empty(t, cwd)
-}
-
-func TestParseCaptureOutput_UnsetVarIsEmptyString(t *testing.T) {
-	stdout := "__SYNACLAB_CAP__UNSET=\n"
-
-	_, captured, _, _ := parseCaptureOutput(stdout)
-
-	assert.Equal(t, map[string]string{"UNSET": ""}, captured)
-}
-
-func TestParseCaptureOutput_CwdSentinelParsed(t *testing.T) {
-	stdout := "some output\n__SYNACLAB_CWD__/tmp/foo\n"
-
-	cleaned, _, cwd, cwdFound := parseCaptureOutput(stdout)
-
-	assert.Equal(t, "some output\n", cleaned)
-	assert.True(t, cwdFound)
-	assert.Equal(t, "/tmp/foo", cwd)
-}
-
-func TestParseCaptureOutput_NoSentinelsLeavesOutputUntouched(t *testing.T) {
-	stdout := "plain output\nno sentinels here\n"
-
-	cleaned, captured, cwd, cwdFound := parseCaptureOutput(stdout)
-
-	assert.Equal(t, stdout, cleaned)
-	assert.Empty(t, captured)
-	assert.False(t, cwdFound)
-	assert.Empty(t, cwd)
+	assert.Equal(t, []string{"one", "two"}, stdout)
+	assert.Empty(t, done.Captured)
 }
