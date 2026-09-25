@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -299,4 +300,48 @@ func TestHandleGetDoc_IncludesActiveFileAfterOpen(t *testing.T) {
 	require.Equal(t, http.StatusOK, postOpen(t, srv.Routes(), map[string]string{"file": "sub/deploy.md"}).Code)
 
 	assert.Equal(t, "sub/deploy.md", getDoc(t, srv.Routes()).ActiveFile)
+}
+
+// TestWorkspace_RunAndSwitchNeverInterleave races a run against a forced
+// switch. Whichever wins, the invariant holds: if both succeed, the switch
+// happened first, so the run belongs to the new runbook's session — never
+// to a session that was swapped out from under a running step.
+func TestWorkspace_RunAndSwitchNeverInterleave(t *testing.T) {
+	root := t.TempDir()
+	step := "```bash {name=step}\nsleep 0.05\n```\n"
+	writeRunbook(t, filepath.Join(root, "a.md"), step)
+	writeRunbook(t, filepath.Join(root, "b.md"), step)
+
+	for i := 0; i < 50; i++ {
+		srv := newWorkspaceServer(t, root, SessionOptions{})
+		ts := serve(t, srv)
+		routes := srv.Routes()
+		require.Equal(t, http.StatusOK, postOpen(t, routes, map[string]string{"file": "a.md"}).Code)
+
+		var wg sync.WaitGroup
+		var runStatus, openStatus int
+		var runBody []byte
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			rec := httptest.NewRecorder()
+			routes.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/steps/step/run", bytes.NewReader([]byte(`{}`))))
+			runStatus, runBody = rec.Code, rec.Body.Bytes()
+		}()
+		go func() {
+			defer wg.Done()
+			openStatus = postOpen(t, routes, map[string]any{"file": "b.md", "force": true}).Code
+		}()
+		wg.Wait()
+
+		if runStatus != http.StatusAccepted || openStatus != http.StatusOK {
+			continue
+		}
+		var got struct {
+			ExecutionID string `json:"execution_id"`
+		}
+		require.NoError(t, json.Unmarshal(runBody, &got))
+		lastEventOf(t, wsDial(t, ts, got.ExecutionID))
+		assert.Len(t, getSession(t, srv.Routes()).History, 1, "iteration %d: the run must be recorded in the active session", i)
+	}
 }

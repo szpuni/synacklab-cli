@@ -4,7 +4,7 @@ import "net/http"
 
 func (s *Server) handleWSExecution(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	rec, ok := s.registry.get(id)
+	rec, ok := s.active.execution(id)
 	if !ok {
 		http.Error(w, "unknown execution "+id, http.StatusNotFound)
 		return
@@ -72,7 +72,7 @@ func toWSEvent(ev Event) wsEvent {
 // there is nothing left to cancel (Requirement 4.6).
 func (s *Server) handleCancelExecution(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	rec, ok := s.registry.get(id)
+	rec, ok := s.active.execution(id)
 	if !ok {
 		s.writeError(w, http.StatusNotFound, "unknown execution "+id)
 		return

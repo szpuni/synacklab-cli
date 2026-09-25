@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -66,7 +65,7 @@ func toSessionView(sess *SessionState) sessionView {
 }
 
 func (s *Server) handleGetDoc(w http.ResponseWriter, _ *http.Request) {
-	sess := s.active.get()
+	sess := s.active.session()
 	if sess == nil {
 		s.writeJSON(w, http.StatusOK, map[string]any{"active": false, "workspace": s.root != ""})
 		return
@@ -111,7 +110,7 @@ func renderProseHTML(markdown string) string {
 }
 
 func (s *Server) handleGetSession(w http.ResponseWriter, _ *http.Request) {
-	sess := s.active.get()
+	sess := s.active.session()
 	if sess == nil {
 		s.writeJSON(w, http.StatusOK, sessionView{Vars: map[string]string{}})
 		return
@@ -131,7 +130,7 @@ func (s *Server) handleGetLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess := s.active.get()
+	sess := s.active.session()
 	if sess == nil {
 		s.writeError(w, http.StatusNotFound, "no active session")
 		return
@@ -160,7 +159,7 @@ func (s *Server) handleGetLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePostSessionReset(w http.ResponseWriter, _ *http.Request) {
-	sess := s.active.get()
+	sess := s.active.session()
 	if sess == nil {
 		s.writeError(w, http.StatusConflict, "no runbook open")
 		return
@@ -175,12 +174,6 @@ type runRequest struct {
 }
 
 func (s *Server) handlePostStepRun(w http.ResponseWriter, r *http.Request) {
-	sess := s.active.get()
-	if sess == nil {
-		s.writeError(w, http.StatusConflict, "no runbook open — select one from the file list")
-		return
-	}
-
 	var req runRequest
 	if r.Body != nil {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
@@ -189,32 +182,27 @@ func (s *Server) handlePostStepRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	name := r.PathValue("name")
-	id := NewID()
-	if running, ok := s.registry.tryReserve(id, name); !ok {
-		s.writeError(w, http.StatusConflict, fmt.Sprintf("step %q is still running (execution %s)", running.stepName, running.id))
-		return
-	}
-
 	// Detached from the *request* context (which ends as soon as this
 	// handler returns the execution_id) but still tied to the server's own
 	// baseCtx, so a shutdown can still cancel an in-flight execution.
-	events, cancel, err := sess.Start(s.baseCtx, name, req.Inputs, req.Confirmed)
+	id, err := s.active.start(s.baseCtx, r.PathValue("name"), req.Inputs, req.Confirmed, s.logger)
 	if err != nil {
-		s.registry.releaseReservation(id)
 		s.writeError(w, statusFor(err), err.Error())
 		return
 	}
-
-	s.registry.start(id, name, cancel, events, s.logger)
 	s.writeJSON(w, http.StatusAccepted, map[string]string{"execution_id": id})
 }
 
 // statusFor maps a runbook *Error to the HTTP status a client should see.
 func statusFor(err error) int {
 	var rbErr *Error
-	if errors.As(err, &rbErr) && rbErr.Type == ErrorTypeNotFound {
-		return http.StatusNotFound
+	if errors.As(err, &rbErr) {
+		switch rbErr.Type {
+		case ErrorTypeNotFound:
+			return http.StatusNotFound
+		case ErrorTypeConflict:
+			return http.StatusConflict
+		}
 	}
 	return http.StatusBadRequest
 }
