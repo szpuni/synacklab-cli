@@ -1,8 +1,10 @@
 package github
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -85,6 +87,24 @@ func TestRepositoryConfig_Validate(t *testing.T) {
 			},
 			wantErr: true,
 			errMsg:  "repository name cannot start or end with a period",
+		},
+		{
+			name:    "name ends with .git",
+			config:  RepositoryConfig{Name: "repo.git"},
+			wantErr: true,
+			errMsg:  "repository name cannot end with .git",
+		},
+		{
+			name:    "name starts with hyphen",
+			config:  RepositoryConfig{Name: "-repo"},
+			wantErr: true,
+			errMsg:  "repository name cannot start with a hyphen",
+		},
+		{
+			name:    "topic starts with hyphen",
+			config:  RepositoryConfig{Name: "test-repo", Topics: []string{"go", "-bad"}},
+			wantErr: true,
+			errMsg:  "topic 2 cannot start or end with a hyphen",
 		},
 		{
 			name: "description too long",
@@ -992,4 +1012,28 @@ func containsSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestRepositoryConfig_Validate_ReportsEveryProblemByField(t *testing.T) {
+	config := RepositoryConfig{
+		Name:          "test-repo",
+		Topics:        []string{"go", "", "Bad"},
+		Collaborators: []Collaborator{{Username: "alice", Permission: "owner"}},
+		Webhooks:      []Webhook{{URL: "ftp://example.com/hook", Events: []string{"push"}}},
+	}
+
+	err := config.Validate()
+
+	var fieldErrs ValidationErrors
+	if !errors.As(err, &fieldErrs) {
+		t.Fatalf("Validate() error = %v, want ValidationErrors in its chain", err)
+	}
+	var fields []string
+	for _, e := range fieldErrs {
+		fields = append(fields, e.Field)
+	}
+	want := []string{"topics[1]", "topics[2]", "collaborators[0].permission", "webhooks[0].url"}
+	if strings.Join(fields, ",") != strings.Join(want, ",") {
+		t.Errorf("Validate() fields = %v, want %v", fields, want)
+	}
 }

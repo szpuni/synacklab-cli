@@ -343,11 +343,6 @@ func (m *DefaultConfigMerger) copyWebhook(webhook Webhook) Webhook {
 	return copied
 }
 
-// ValidateMergedConfig validates the merged configuration
-func (m *DefaultConfigMerger) ValidateMergedConfig(merged *RepositoryConfig) error {
-	return merged.Validate()
-}
-
 // isZeroValue checks if a reflect.Value represents the zero value for its type
 func isZeroValue(v reflect.Value) bool {
 	switch v.Kind() {

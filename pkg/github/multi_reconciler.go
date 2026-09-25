@@ -2,9 +2,12 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/google/go-github/v66/github"
 )
 
 // MultiReconciler manages multiple repositories
@@ -207,12 +210,7 @@ func (mr *multiReconciler) ValidateAll(config *MultiRepositoryConfig, repoFilter
 		}
 		result.Details[repoConfig.Name] = validationDetails
 
-		// Validate repository configuration before merging
-		if err := mr.validateRepositoryConfig(&repoConfig, validationDetails); err != nil {
-			result.Invalid[repoConfig.Name] = err
-			result.Summary.InvalidCount++
-			continue
-		}
+		mr.addValidationWarnings(&repoConfig, validationDetails)
 
 		// Merge defaults with repository-specific configuration
 		mergedConfig, err := mr.merger.MergeDefaults(config.Defaults, &repoConfig)
@@ -227,20 +225,14 @@ func (mr *multiReconciler) ValidateAll(config *MultiRepositoryConfig, repoFilter
 			continue
 		}
 
-		// Validate merged configuration
-		if err := mr.merger.ValidateMergedConfig(mergedConfig); err != nil {
-			mergedErr := fmt.Errorf("merged configuration validation failed: %w", err)
-			result.Invalid[repoConfig.Name] = mergedErr
-			result.Summary.InvalidCount++
-			validationDetails.Errors = append(validationDetails.Errors, ValidationError{
-				Field:   "merged_configuration",
-				Message: mergedErr.Error(),
-			})
-			continue
-		}
-
-		// Perform comprehensive validation using the reconciler
-		if err := mr.validateRepositoryWithReconciler(mergedConfig, validationDetails); err != nil {
+		// Validate what will actually be applied: the merged configuration.
+		if err := mergedConfig.Validate(); err != nil {
+			var fieldErrs ValidationErrors
+			if errors.As(err, &fieldErrs) {
+				validationDetails.Errors = append(validationDetails.Errors, fieldErrs...)
+			} else {
+				validationDetails.Errors = append(validationDetails.Errors, ValidationError{Field: "configuration", Message: err.Error()})
+			}
 			result.Invalid[repoConfig.Name] = err
 			result.Summary.InvalidCount++
 		} else {
@@ -340,24 +332,26 @@ func (mr *multiReconciler) performAuthenticationCheck() error {
 	return nil
 }
 
-// applyRepositoryPlanWithRateLimit applies a reconciliation plan with rate limiting and concurrency control
-func (mr *multiReconciler) applyRepositoryPlanWithRateLimit(_ context.Context, repoName string, plan *ReconciliationPlan) error {
-	// Create single repository reconciler for this repository
-	reconciler := NewReconciler(mr.client, mr.owner)
-
-	// Apply the reconciliation plan with rate limiting and retry logic
-	retryConfig := DefaultRetryConfig()
-
-	err := RetryWithRateLimit(func() error {
-		return reconciler.Apply(plan)
-	}, mr.rateLimiter, retryConfig)
-
-	if err != nil {
-		// Enhance error with repository context and actionable guidance
-		return mr.enhanceRepositoryError(repoName, err)
+// applyRepositoryPlanWithRateLimit applies a reconciliation plan once, after
+// waiting its turn on the shared rate limiter. Retrying individual API calls
+// is the client's job (Client wraps each one in WithRetry); re-running the
+// whole plan here would multiply those retries and replay mutations.
+func (mr *multiReconciler) applyRepositoryPlanWithRateLimit(ctx context.Context, repoName string, plan *ReconciliationPlan) error {
+	if err := mr.rateLimiter.Wait(ctx); err != nil {
+		return fmt.Errorf("rate limiter wait failed: %w", err)
 	}
 
-	return nil
+	err := NewReconciler(mr.client, mr.owner).Apply(plan)
+	if err == nil {
+		return nil
+	}
+
+	// Let every other worker back off until GitHub's rate limit resets.
+	var rateLimitErr *github.RateLimitError
+	if errors.As(err, &rateLimitErr) {
+		mr.rateLimiter.UpdateLimits(0, int(rateLimitErr.Rate.Reset.Unix()))
+	}
+	return mr.enhanceRepositoryError(repoName, err)
 }
 
 // enhanceRepositoryError enhances an error with repository context and actionable guidance
@@ -601,204 +595,6 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// validateRepositoryConfig performs basic validation on a repository configuration
-func (mr *multiReconciler) validateRepositoryConfig(repo *RepositoryConfig, details *RepositoryValidationDetails) error {
-	var validationErrors []string
-
-	// Validate repository name
-	if repo.Name == "" {
-		validationErrors = append(validationErrors, "repository name is required")
-		details.Errors = append(details.Errors, ValidationError{
-			Field:   "name",
-			Message: "repository name is required",
-		})
-	} else if err := validateGitHubRepositoryName(repo.Name); err != nil {
-		validationErrors = append(validationErrors, fmt.Sprintf("invalid repository name: %v", err))
-		details.Errors = append(details.Errors, ValidationError{
-			Field:   "name",
-			Value:   repo.Name,
-			Message: fmt.Sprintf("invalid repository name: %v", err),
-		})
-	}
-
-	// Validate description length
-	if len(repo.Description) > 350 {
-		validationErrors = append(validationErrors, "description must be 350 characters or less")
-		details.Errors = append(details.Errors, ValidationError{
-			Field:   "description",
-			Value:   repo.Description,
-			Message: "description must be 350 characters or less",
-		})
-	}
-
-	// Validate topics
-	if len(repo.Topics) > 20 {
-		validationErrors = append(validationErrors, "repository can have at most 20 topics")
-		details.Errors = append(details.Errors, ValidationError{
-			Field:   "topics",
-			Message: "repository can have at most 20 topics",
-		})
-	}
-
-	for i, topic := range repo.Topics {
-		if len(topic) == 0 {
-			validationErrors = append(validationErrors, fmt.Sprintf("topic %d cannot be empty", i+1))
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   fmt.Sprintf("topics[%d]", i),
-				Message: "topic cannot be empty",
-			})
-		} else if len(topic) > 50 {
-			validationErrors = append(validationErrors, fmt.Sprintf("topic %d must be 50 characters or less", i+1))
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   fmt.Sprintf("topics[%d]", i),
-				Value:   topic,
-				Message: "topic must be 50 characters or less",
-			})
-		} else if err := validateGitHubTopic(topic); err != nil {
-			validationErrors = append(validationErrors, fmt.Sprintf("topic %d is invalid: %v", i+1, err))
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   fmt.Sprintf("topics[%d]", i),
-				Value:   topic,
-				Message: fmt.Sprintf("invalid topic: %v", err),
-			})
-		}
-	}
-
-	// Validate branch protection rules
-	for i, rule := range repo.BranchRules {
-		if rule.Pattern == "" {
-			validationErrors = append(validationErrors, fmt.Sprintf("branch protection rule %d: pattern is required", i+1))
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   fmt.Sprintf("branch_protection[%d].pattern", i),
-				Message: "pattern is required",
-			})
-		}
-		if rule.RequiredReviews < 0 || rule.RequiredReviews > 6 {
-			validationErrors = append(validationErrors, fmt.Sprintf("branch protection rule %d: required reviews must be between 0 and 6", i+1))
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   fmt.Sprintf("branch_protection[%d].required_reviews", i),
-				Value:   fmt.Sprintf("%d", rule.RequiredReviews),
-				Message: "required reviews must be between 0 and 6",
-			})
-		}
-	}
-
-	// Validate collaborators
-	for i, collab := range repo.Collaborators {
-		if collab.Username == "" {
-			validationErrors = append(validationErrors, fmt.Sprintf("collaborator %d: username is required", i+1))
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   fmt.Sprintf("collaborators[%d].username", i),
-				Message: "username is required",
-			})
-		} else if err := validateGitHubUsername(collab.Username); err != nil {
-			validationErrors = append(validationErrors, fmt.Sprintf("collaborator %d: %v", i+1, err))
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   fmt.Sprintf("collaborators[%d].username", i),
-				Value:   collab.Username,
-				Message: fmt.Sprintf("invalid username: %v", err),
-			})
-		}
-		if !isValidPermission(collab.Permission) {
-			validationErrors = append(validationErrors, fmt.Sprintf("collaborator %d: permission must be one of: read, write, admin", i+1))
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   fmt.Sprintf("collaborators[%d].permission", i),
-				Value:   collab.Permission,
-				Message: "permission must be one of: read, write, admin",
-			})
-		}
-	}
-
-	// Validate teams
-	for i, team := range repo.Teams {
-		if team.TeamSlug == "" {
-			validationErrors = append(validationErrors, fmt.Sprintf("team %d: team slug is required", i+1))
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   fmt.Sprintf("teams[%d].team", i),
-				Message: "team slug is required",
-			})
-		} else if err := validateGitHubTeamSlug(team.TeamSlug); err != nil {
-			validationErrors = append(validationErrors, fmt.Sprintf("team %d: %v", i+1, err))
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   fmt.Sprintf("teams[%d].team", i),
-				Value:   team.TeamSlug,
-				Message: fmt.Sprintf("invalid team slug: %v", err),
-			})
-		}
-		if !isValidPermission(team.Permission) {
-			validationErrors = append(validationErrors, fmt.Sprintf("team %d: permission must be one of: read, write, admin", i+1))
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   fmt.Sprintf("teams[%d].permission", i),
-				Value:   team.Permission,
-				Message: "permission must be one of: read, write, admin",
-			})
-		}
-	}
-
-	// Validate webhooks
-	for i, webhook := range repo.Webhooks {
-		if webhook.URL == "" {
-			validationErrors = append(validationErrors, fmt.Sprintf("webhook %d: URL is required", i+1))
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   fmt.Sprintf("webhooks[%d].url", i),
-				Message: "URL is required",
-			})
-		}
-		if len(webhook.Events) == 0 {
-			validationErrors = append(validationErrors, fmt.Sprintf("webhook %d: at least one event is required", i+1))
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   fmt.Sprintf("webhooks[%d].events", i),
-				Message: "at least one event is required",
-			})
-		}
-		for j, event := range webhook.Events {
-			if !isValidWebhookEvent(event) {
-				validationErrors = append(validationErrors, fmt.Sprintf("webhook %d, event %d: invalid event type '%s'", i+1, j+1, event))
-				details.Errors = append(details.Errors, ValidationError{
-					Field:   fmt.Sprintf("webhooks[%d].events[%d]", i, j),
-					Value:   event,
-					Message: fmt.Sprintf("invalid event type '%s'", event),
-				})
-			}
-		}
-	}
-
-	// Add warnings for potential issues
-	mr.addValidationWarnings(repo, details)
-
-	if len(validationErrors) > 0 {
-		return fmt.Errorf("repository validation failed: %s", strings.Join(validationErrors, "; "))
-	}
-
-	return nil
-}
-
-// validateRepositoryWithReconciler performs validation using the reconciler
-func (mr *multiReconciler) validateRepositoryWithReconciler(config *RepositoryConfig, details *RepositoryValidationDetails) error {
-	// Create single repository reconciler for validation
-	reconciler := NewReconciler(mr.client, mr.owner)
-
-	// Validate the repository configuration
-	if err := reconciler.Validate(*config); err != nil {
-		// Parse the error and add to details
-		if ghErr, ok := err.(*Error); ok {
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   ghErr.Field,
-				Message: ghErr.Message,
-				Code:    ghErr.Code,
-			})
-		} else {
-			details.Errors = append(details.Errors, ValidationError{
-				Field:   "reconciler_validation",
-				Message: err.Error(),
-			})
-		}
-		return err
-	}
-
-	return nil
 }
 
 // addValidationWarnings adds warnings for potential configuration issues
