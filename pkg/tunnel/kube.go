@@ -2,6 +2,8 @@ package tunnel
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
@@ -25,4 +27,16 @@ func NewClient(contextName string) (*corev1client.CoreV1Client, *rest.Config, er
 		return nil, nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}
 	return client, config, nil
+}
+
+// Contexts lists the kubeconfig's context names, sorted, and its current
+// context, using the same loading rules as NewClient.
+func Contexts() (names []string, current string, err error) {
+	raw, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		clientcmd.NewDefaultClientConfigLoadingRules(), &clientcmd.ConfigOverrides{},
+	).RawConfig()
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to load kubeconfig: %w", err)
+	}
+	return slices.Sorted(maps.Keys(raw.Contexts)), raw.CurrentContext, nil
 }

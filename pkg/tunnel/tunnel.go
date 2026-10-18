@@ -43,6 +43,7 @@ type Options struct {
 	LocalPort    int
 	User         string // local OS username; sanitized before use
 	Out, Err     io.Writer
+	Ready        func(pod string) // optional; called once when the tunnel first accepts connections
 }
 
 // Forwarder forwards 127.0.0.1:localPort to podPort on the named pod until ctx
@@ -117,6 +118,9 @@ func run(ctx context.Context, pods corev1client.PodInterface, forward Forwarder,
 					}
 				}
 				printConnected(pod.Name, target, opts)
+				if opts.Ready != nil {
+					opts.Ready(pod.Name)
+				}
 			})
 		}
 
@@ -190,8 +194,8 @@ func printConnected(podName string, target Target, opts Options) {
 	_, _ = fmt.Fprintf(opts.Out, "✓ Tunnel pod %s ready (namespace %s)\n", podName, opts.Namespace)
 	_, _ = fmt.Fprintf(opts.Out, "→ %s %s is available at 127.0.0.1:%d\n",
 		target.Kind, net.JoinHostPort(target.Host, strconv.Itoa(target.Port)), opts.LocalPort)
-	if e, ok := engines[target.Kind]; ok {
-		_, _ = fmt.Fprintf(opts.Out, "  "+e.clientHint+"\n", opts.LocalPort)
+	if hint := ClientHint(target.Kind, opts.LocalPort); hint != "" {
+		_, _ = fmt.Fprintln(opts.Out, "  "+hint)
 	}
 	_, _ = fmt.Fprintln(opts.Out, "  Press Ctrl-C to close the tunnel")
 }

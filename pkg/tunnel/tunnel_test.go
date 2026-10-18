@@ -313,3 +313,35 @@ func TestOpen_StreamsPodLogsToStderr(t *testing.T) {
 	}
 	require.NoError(t, tunnel.Open(ctx, client.CoreV1(), forward, pgTarget, opts))
 }
+
+func TestOpen_ReportsReadyOnceWithThePodName(t *testing.T) {
+	client := clusterWhere(runningAndReady)
+	ctx, cancel := context.WithCancel(t.Context())
+	var calls []forwardCall
+	var readyPods []string
+	opts := testOptions()
+	opts.Ready = func(pod string) { readyPods = append(readyPods, pod) }
+
+	require.NoError(t, tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), pgTarget, opts))
+
+	assert.Equal(t, []string{calls[0].pod}, readyPods)
+}
+
+func TestOpen_DoesNotReportReadyWhenTheForwardNeverWorks(t *testing.T) {
+	client := clusterWhere(runningAndReady)
+	readyCalled := false
+	opts := testOptions()
+	opts.Ready = func(string) { readyCalled = true }
+	failing := func(context.Context, string, string, int, int, chan struct{}) error {
+		return assert.AnError
+	}
+
+	require.Error(t, tunnel.Open(t.Context(), client.CoreV1(), failing, pgTarget, opts))
+	assert.False(t, readyCalled)
+}
+
+func TestClientHint_TellsHowToConnectWithTheEnginesClient(t *testing.T) {
+	assert.Equal(t, "psql -h 127.0.0.1 -p 15432 -U <user> <database>", tunnel.ClientHint("postgres", 15432))
+	assert.Contains(t, tunnel.ClientHint("mysql", 13306), "mysql -h 127.0.0.1 -P 13306")
+	assert.Empty(t, tunnel.ClientHint("redis", 6379))
+}

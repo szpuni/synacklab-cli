@@ -21,3 +21,13 @@ func DefaultPort(name string) (int, error) {
 	}
 	return e.port, nil
 }
+
+// ClientHint tells how to connect the engine's usual client to localPort, or
+// returns "" for an unknown engine.
+func ClientHint(name string, localPort int) string {
+	e, ok := engines[name]
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf(e.clientHint, localPort)
+}

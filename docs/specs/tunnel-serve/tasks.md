@@ -2,12 +2,13 @@
 
 Depends on `docs/specs/web-ui-kit/` being merged.
 
-- [ ] 1. `pkg/tunnel` hooks (TDD)
+- [x] 1. `pkg/tunnel` hooks (TDD)
   - Test: `Options.Ready` is called once with the pod name when the forward is
     ready, and not at all when it never becomes ready
   - Test: `Contexts()` lists contexts and the current one from a temp
     `KUBECONFIG`
-  - Implement `Options.Ready` and `Contexts()`
+  - Implement `Options.Ready` and `Contexts()`; export `ClientHint(engine,
+    port)` so the page shows the same hint as the CLI
   - Verify: `go test ./pkg/tunnel`
   - _Requirements: 3.2, 2.3_
 
