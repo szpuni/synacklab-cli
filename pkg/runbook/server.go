@@ -1,16 +1,12 @@
 package runbook
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
-	"fmt"
 	"io/fs"
-	"net"
 	"net/http"
-	"time"
 
 	"github.com/gorilla/websocket"
 
@@ -92,39 +88,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/files", s.handleGetFiles)
 	mux.HandleFunc("POST /api/open", s.handlePostOpen)
 	mux.Handle("GET /", http.FileServer(webRoot()))
-	return s.withRequestLogging(mux)
-}
-
-// withRequestLogging logs every request at Info, so a running `serve`
-// process's own console shows activity the browser client causes.
-func (s *Server) withRequestLogging(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		next.ServeHTTP(rec, r)
-		s.logger.Info("%s %s %d %s", r.Method, r.URL.Path, rec.status, time.Since(start))
-	})
-}
-
-type statusRecorder struct {
-	http.ResponseWriter
-	status int
-}
-
-func (r *statusRecorder) WriteHeader(code int) {
-	r.status = code
-	r.ResponseWriter.WriteHeader(code)
-}
-
-// Hijack forwards to the underlying ResponseWriter, since embedding only the
-// http.ResponseWriter interface would otherwise hide it — required for the
-// WebSocket upgrade, which hijacks the connection.
-func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	hj, ok := r.ResponseWriter.(http.Hijacker)
-	if !ok {
-		return nil, nil, fmt.Errorf("underlying ResponseWriter does not support hijacking")
-	}
-	return hj.Hijack()
+	return mux
 }
 
 // NewID generates a random id, used for both execution ids and (by CLI

@@ -48,19 +48,6 @@ func newLoggingTestServer(t *testing.T, src string) (*Server, *syncBuffer) {
 	return srv, buf
 }
 
-func TestServer_LogsHTTPRequestsAtInfo(t *testing.T) {
-	srv, buf := newLoggingTestServer(t, "```bash {name=hello}\necho hi\n```\n")
-
-	req := httptest.NewRequest(http.MethodGet, "/api/doc", nil)
-	rec := httptest.NewRecorder()
-	srv.Routes().ServeHTTP(rec, req)
-
-	out := buf.String()
-	assert.Contains(t, out, "INFO")
-	assert.Contains(t, out, "GET")
-	assert.Contains(t, out, "/api/doc")
-}
-
 func TestServer_LogsStepStartAndSuccessfulFinishAtInfo(t *testing.T) {
 	srv, buf := newLoggingTestServer(t, "```bash {name=hello}\necho hi\n```\n")
 

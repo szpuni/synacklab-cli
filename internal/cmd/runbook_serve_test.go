@@ -12,17 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIsLoopbackBind(t *testing.T) {
-	cases := map[string]bool{
-		"127.0.0.1":   true,
-		"localhost":   true,
-		"::1":         true,
-		"0.0.0.0":     false,
-		"192.168.1.5": false,
-	}
-	for bind, want := range cases {
-		assert.Equal(t, want, isLoopbackBind(bind), "bind=%s", bind)
-	}
+func TestRunServe_NonLoopbackBindFailsBeforeListening(t *testing.T) {
+	old := serveBind
+	t.Cleanup(func() { serveBind = old })
+	serveBind = "0.0.0.0"
+
+	err := runServe(nil, []string{t.TempDir()})
+	assert.ErrorContains(t, err, "local-only")
 }
 
 func TestServeFlags_Defaults(t *testing.T) {
