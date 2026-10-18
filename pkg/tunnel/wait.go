@@ -9,7 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
 // readyTimeout bounds the wait for scheduling, image pull, and socat start.
@@ -25,10 +25,10 @@ var waitingFailures = map[string]bool{
 
 // waitReady polls the pod until its container is ready, failing fast when the
 // pod reports a reason it will never become ready.
-func waitReady(ctx context.Context, client kubernetes.Interface, namespace, name string) error {
+func waitReady(ctx context.Context, client corev1client.CoreV1Interface, namespace, name string) error {
 	var last *corev1.Pod
 	err := wait.PollUntilContextTimeout(ctx, time.Second, readyTimeout, true, func(ctx context.Context) (bool, error) {
-		pod, err := client.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+		pod, err := client.Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}

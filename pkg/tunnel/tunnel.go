@@ -15,7 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
 const (
@@ -71,7 +71,7 @@ var clientHints = map[string]string{
 // Open runs a tunnel pod for target and forwards opts.LocalPort to it. It
 // blocks until ctx is cancelled (returning nil) or the tunnel fails, and
 // always deletes the pod it created.
-func Open(ctx context.Context, client kubernetes.Interface, forward Forwarder, target Target, opts Options) error {
+func Open(ctx context.Context, client corev1client.CoreV1Interface, forward Forwarder, target Target, opts Options) error {
 	if err := ValidateHost(target.Host); err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func Open(ctx context.Context, client kubernetes.Interface, forward Forwarder, t
 		return err
 	}
 
-	pod, err := client.CoreV1().Pods(opts.Namespace).Create(ctx, buildPod(target, opts, SanitizeUser(opts.User)), metav1.CreateOptions{})
+	pod, err := client.Pods(opts.Namespace).Create(ctx, buildPod(target, opts, SanitizeUser(opts.User)), metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to create tunnel pod in namespace %q: %w", opts.Namespace, err)
 	}
@@ -170,8 +170,8 @@ func printConnected(podName string, target Target, opts Options) {
 
 // streamLogs copies socat's output (e.g. refused upstream connections) to
 // opts.Err until ctx is done.
-func streamLogs(ctx context.Context, client kubernetes.Interface, podName string, opts Options) {
-	logs, err := client.CoreV1().Pods(opts.Namespace).GetLogs(podName, &corev1.PodLogOptions{Follow: true}).Stream(ctx)
+func streamLogs(ctx context.Context, client corev1client.CoreV1Interface, podName string, opts Options) {
+	logs, err := client.Pods(opts.Namespace).GetLogs(podName, &corev1.PodLogOptions{Follow: true}).Stream(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
 			_, _ = fmt.Fprintf(opts.Err, "⚠️  Could not stream tunnel pod logs: %v\n", err)
@@ -184,9 +184,9 @@ func streamLogs(ctx context.Context, client kubernetes.Interface, podName string
 
 // stopWhenPodStops calls stop once the pod leaves the Running phase (e.g.
 // killed at max_duration). Lookup errors are ignored; the next check retries.
-func stopWhenPodStops(ctx context.Context, stop context.CancelFunc, client kubernetes.Interface, namespace, name string) {
+func stopWhenPodStops(ctx context.Context, stop context.CancelFunc, client corev1client.CoreV1Interface, namespace, name string) {
 	_ = wait.PollUntilContextCancel(ctx, podWatchInterval, false, func(ctx context.Context) (bool, error) {
-		pod, err := client.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+		pod, err := client.Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 		return err == nil && pod.Status.Phase != corev1.PodRunning, nil
 	})
 	stop()
@@ -194,11 +194,11 @@ func stopWhenPodStops(ctx context.Context, stop context.CancelFunc, client kuber
 
 // getPodRetrying retries the lookup through transient API errors, such as
 // the brief Forbidden responses of an API server whose RBAC cache is warming up.
-func getPodRetrying(ctx context.Context, client kubernetes.Interface, namespace, name string) (*corev1.Pod, error) {
+func getPodRetrying(ctx context.Context, client corev1client.CoreV1Interface, namespace, name string) (*corev1.Pod, error) {
 	var pod *corev1.Pod
 	var lastErr error
 	err := wait.PollUntilContextTimeout(ctx, retryInterval, podCheckTimeout, true, func(ctx context.Context) (bool, error) {
-		pod, lastErr = client.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+		pod, lastErr = client.Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 		return lastErr == nil, nil
 	})
 	if err != nil && lastErr != nil {
@@ -209,12 +209,12 @@ func getPodRetrying(ctx context.Context, client kubernetes.Interface, namespace,
 
 // deletePod uses its own context: by teardown the command's context is
 // usually already cancelled. It retries through transient API errors.
-func deletePod(client kubernetes.Interface, name string, opts Options) {
+func deletePod(client corev1client.CoreV1Interface, name string, opts Options) {
 	ctx, cancel := context.WithTimeout(context.Background(), deleteTimeout)
 	defer cancel()
 	var err error
 	_ = wait.PollUntilContextCancel(ctx, retryInterval, true, func(ctx context.Context) (bool, error) {
-		err = client.CoreV1().Pods(opts.Namespace).Delete(ctx, name, metav1.DeleteOptions{})
+		err = client.Pods(opts.Namespace).Delete(ctx, name, metav1.DeleteOptions{})
 		if apierrors.IsNotFound(err) {
 			err = nil
 		}

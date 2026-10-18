@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"k8s.io/client-go/kubernetes"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
@@ -16,9 +16,9 @@ import (
 // PortForwarder returns the real Forwarder: the Kubernetes pods/portforward
 // API over WebSockets, falling back to SPDY like kubectl. It listens on
 // 127.0.0.1 only and writes per-connection errors to errOut.
-func PortForwarder(config *rest.Config, client kubernetes.Interface, errOut io.Writer) Forwarder {
+func PortForwarder(config *rest.Config, client corev1client.CoreV1Interface, errOut io.Writer) Forwarder {
 	return func(ctx context.Context, namespace, pod string, localPort, podPort int, ready chan struct{}) error {
-		url := client.CoreV1().RESTClient().Post().
+		url := client.RESTClient().Post().
 			Resource("pods").Namespace(namespace).Name(pod).SubResource("portforward").URL()
 
 		transport, upgrader, err := spdy.RoundTripperFor(config)

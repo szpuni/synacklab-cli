@@ -83,7 +83,7 @@ func TestOpen_RunsALockedDownSocatPodPointedAtTheTarget(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var calls []forwardCall
 
-	err := tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions())
+	err := tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions())
 	require.NoError(t, err)
 	require.Len(t, calls, 1)
 
@@ -146,7 +146,7 @@ func TestOpen_BracketsIPv6TargetsForSocat(t *testing.T) {
 	var calls []forwardCall
 
 	target := tunnel.Target{Kind: "mysql", Host: "fd00::15", Port: 3306}
-	require.NoError(t, tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), target, testOptions()))
+	require.NoError(t, tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), target, testOptions()))
 
 	require.Len(t, calls, 1)
 	assert.Equal(t, "TCP:[fd00::15]:3306,connect-timeout=10", calls[0].podAtForward.Spec.Containers[0].Args[1])
@@ -157,7 +157,7 @@ func TestOpen_DeletesThePodWhenTheTunnelCloses(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var calls []forwardCall
 
-	require.NoError(t, tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions()))
+	require.NoError(t, tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions()))
 
 	pods, err := client.CoreV1().Pods("tunnels").List(t.Context(), metav1.ListOptions{})
 	require.NoError(t, err)
@@ -174,7 +174,7 @@ func TestOpen_RejectsAnInvalidTargetBeforeTouchingTheCluster(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			var calls []forwardCall
 
-			err := tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), target, testOptions())
+			err := tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), target, testOptions())
 			assert.Error(t, err)
 			assert.Empty(t, client.Actions())
 		})
@@ -224,7 +224,7 @@ func TestOpen_ReportsWhyThePodCouldNotStartAndCleansUp(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			var calls []forwardCall
 
-			err := tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions())
+			err := tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions())
 			require.Error(t, err)
 			for _, want := range tc.wantErr {
 				assert.ErrorContains(t, err, want)
@@ -267,7 +267,7 @@ func TestOpen_RefusesABusyLocalPortBeforeCreatingAPod(t *testing.T) {
 	opts := testOptions()
 	opts.LocalPort = busy.Addr().(*net.TCPAddr).Port
 
-	err = tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, opts)
+	err = tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), pgTarget, opts)
 	assert.ErrorContains(t, err, "already in use")
 	assert.ErrorContains(t, err, "--local-port")
 	assert.Empty(t, client.Actions())
@@ -287,7 +287,7 @@ func TestOpen_TellsTheUserHowToConnectOnceForwarding(t *testing.T) {
 			opts.Out = out
 
 			target := tunnel.Target{Kind: kind, Host: "orders.internal", Port: 5432}
-			require.NoError(t, tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), target, opts))
+			require.NoError(t, tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), target, opts))
 
 			got := out.String()
 			assert.Contains(t, got, calls[0].pod)
@@ -313,7 +313,7 @@ func TestOpen_StreamsPodLogsToStderr(t *testing.T) {
 		cancel()
 		return nil
 	}
-	require.NoError(t, tunnel.Open(ctx, client, forward, pgTarget, opts))
+	require.NoError(t, tunnel.Open(ctx, client.CoreV1(), forward, pgTarget, opts))
 }
 
 func TestOpen_KeepsForbiddenErrorsRecognisable(t *testing.T) {
@@ -324,6 +324,6 @@ func TestOpen_KeepsForbiddenErrorsRecognisable(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var calls []forwardCall
 
-	err := tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions())
+	err := tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions())
 	assert.True(t, apierrors.IsForbidden(err), "got %v", err)
 }

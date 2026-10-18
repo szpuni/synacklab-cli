@@ -57,7 +57,7 @@ pkg/fuzzy/                    interactive selection, three tiers with fallback
 
 pkg/tunnel/                   TCP tunnels via a socat pod + kube port-forward (spec:
                               docs/specs/tunnel/; operator guide: docs/tunnel.md)
-  tunnel.go    Open(ctx, kubernetes.Interface, Forwarder, Target, Options): validate,
+  tunnel.go    Open(ctx, corev1client.CoreV1Interface, Forwarder, Target, Options): validate,
                check local port, create pod, waitReady, forward loop (reconnects
                while pod Running; stopWhenPodStops polls phase so idle tunnels see
                max_duration), streams pod logs to stderr, deletePod (retried) on exit

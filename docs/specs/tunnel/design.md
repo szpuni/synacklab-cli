@@ -47,7 +47,7 @@ pkg/tunnel/
   pod.go          buildPod(Target, Options) *corev1.Pod — pure
   wait.go         waitReady(ctx, client, ns, name) — readiness + fail-fast reasons
   forward.go      PortForwarder(restConfig, client, errOut) Forwarder — real client-go portforward
-  kube.go         NewClient(kubeconfigContext) (kubernetes.Interface, *rest.Config, error)
+  kube.go         NewClient(kubeContext) (*corev1client.CoreV1Client, *rest.Config, error)
   engine.go       DefaultPort(engine string) (int, error)
   validate.go     ValidateHost, ValidatePort, SanitizeUser
   *_test.go
@@ -94,12 +94,12 @@ type Options struct {
 type Forwarder func(ctx context.Context, namespace, pod string,
 	localPort, podPort int, ready chan<- struct{}) error
 
-func Open(ctx context.Context, client kubernetes.Interface, forward Forwarder,
+func Open(ctx context.Context, client corev1client.CoreV1Interface, forward Forwarder,
 	target Target, opts Options) error
 ```
 
-- `kubernetes.Interface` is client-go's own interface; tests use
-  `k8s.io/client-go/kubernetes/fake`. No new interface is introduced.
+- `corev1client.CoreV1Interface` is client-go's own interface; tests pass
+  `fake.NewClientset().CoreV1()` from `k8s.io/client-go/kubernetes/fake`. No new interface is introduced.
 - `Forwarder` is a function type rather than an interface: one method, one real
   implementation (`PortForwarder`), one test stub. It's the only seam the fake
   clientset can't cover, because port-forward goes over SPDY, not the typed API.
@@ -199,7 +199,8 @@ server); covered by the manual verification against kind.
 
 `clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 clientcmd.NewDefaultClientConfigLoadingRules(), &clientcmd.ConfigOverrides{CurrentContext: ctx})`
-→ `rest.Config` → `kubernetes.NewForConfig`. Default loading rules honour
+→ `rest.Config` → `corev1client.NewForConfig` (core/v1 only: the full
+`kubernetes.Clientset` added ~9 MB of unused API groups to the stripped binary). Default loading rules honour
 `$KUBECONFIG` and exec credential plugins (e.g. the `aws eks get-token` entries
 that `eks-config` writes).
 
@@ -357,8 +358,10 @@ Noticed while scoping, not changed by this spec: the CI lint step passes
   and `k8s.io/streaming` (port-forward dialer types).
 
 Risks:
-- Binary size grows noticeably (client-go pulls in the typed API). Accepted as
-  the cost of the steering doc's no-external-binary rule.
+- Binary size grows noticeably (client-go pulls in the typed API). Measured
+  stripped (`-s -w`, as GoReleaser builds): 18.2 MB on `main` → 45.4 MB with
+  the core/v1-only client (54.4 MB with the full clientset). Accepted as the
+  cost of the steering doc's no-external-binary rule.
 - `.golangci.yml`'s gomodguard blocks `github.com/evanphx/json-patch`; confirm
   `golangci-lint run` stays clean after `go mod tidy` (client-go uses
   `gopkg.in/evanphx/json-patch.v4`, which is not blocked).

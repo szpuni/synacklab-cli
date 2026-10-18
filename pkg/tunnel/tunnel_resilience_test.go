@@ -50,7 +50,7 @@ func TestOpen_ReconnectsWhileThePodIsStillRunning(t *testing.T) {
 		return nil
 	}
 
-	require.NoError(t, tunnel.Open(ctx, client, forward, pgTarget, opts))
+	require.NoError(t, tunnel.Open(ctx, client.CoreV1(), forward, pgTarget, opts))
 	assert.Equal(t, []int{15432, 15432}, ports)
 	assert.Contains(t, errOut.String(), "reconnecting")
 }
@@ -68,7 +68,7 @@ func TestOpen_FailsWithThePodReasonWhenThePodStops(t *testing.T) {
 		return errors.New("lost connection to pod")
 	}
 
-	err := tunnel.Open(t.Context(), client, forward, pgTarget, testOptions())
+	err := tunnel.Open(t.Context(), client.CoreV1(), forward, pgTarget, testOptions())
 	assert.ErrorContains(t, err, "DeadlineExceeded")
 }
 
@@ -84,7 +84,7 @@ func TestOpen_WarnsWhenThePodCannotBeDeleted(t *testing.T) {
 	opts := testOptions()
 	opts.Err = errOut
 
-	require.NoError(t, tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, opts))
+	require.NoError(t, tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), pgTarget, opts))
 	assert.Contains(t, errOut.String(), calls[0].pod)
 	assert.Contains(t, errOut.String(), "connection refused")
 	assert.Contains(t, errOut.String(), "max_duration")
@@ -122,7 +122,7 @@ func TestOpen_ReconnectsThroughABriefAPIServerOutage(t *testing.T) {
 		return nil
 	}
 
-	require.NoError(t, tunnel.Open(ctx, client, forward, pgTarget, testOptions()))
+	require.NoError(t, tunnel.Open(ctx, client.CoreV1(), forward, pgTarget, testOptions()))
 	assert.Equal(t, 2, forwards)
 	assert.Zero(t, failures)
 }
@@ -144,7 +144,7 @@ func TestOpen_RetriesDeletingThePodThroughABriefAPIServerOutage(t *testing.T) {
 	opts := testOptions()
 	opts.Err = errOut
 
-	require.NoError(t, tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, opts))
+	require.NoError(t, tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), pgTarget, opts))
 
 	pods, err := client.CoreV1().Pods("tunnels").List(t.Context(), metav1.ListOptions{})
 	require.NoError(t, err)
@@ -171,7 +171,7 @@ func TestOpen_NoticesThePodStoppingWhileTheTunnelIsIdle(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	err := tunnel.Open(ctx, client, forward, pgTarget, testOptions())
+	err := tunnel.Open(ctx, client.CoreV1(), forward, pgTarget, testOptions())
 	assert.ErrorContains(t, err, "DeadlineExceeded")
 }
 
@@ -181,7 +181,7 @@ func TestOpen_CtrlCWhileWaitingForThePodExitsCleanly(t *testing.T) {
 	defer cancel()
 	var calls []forwardCall
 
-	require.NoError(t, tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions()))
+	require.NoError(t, tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions()))
 	assert.Empty(t, calls)
 
 	pods, err := client.CoreV1().Pods("tunnels").List(t.Context(), metav1.ListOptions{})
