@@ -52,7 +52,7 @@
   - Verify: `go test ./pkg/tunnel`
   - _Requirements: 4.1, 4.2, 4.3_
 
-- [ ] 5. `Open` lifecycle: create, wait, forward loop, teardown (TDD)
+- [x] 5. `Open` lifecycle: create, wait, forward loop, teardown (TDD)
   - Write `pkg/tunnel/tunnel_test.go` with fake clientset + stub `Forwarder`:
     busy local port → error, no pod created; ctx cancel → pod deleted, nil;
     not ready → pod deleted, error; forwarder drops with pod Running → called

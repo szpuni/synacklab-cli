@@ -1,14 +1,20 @@
 package tunnel_test
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"io"
+	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -28,6 +34,8 @@ func testOptions() tunnel.Options {
 		NodeSelector: map[string]string{"subnet": "app"},
 		LocalPort:    15432,
 		User:         "Wojtek",
+		Out:          io.Discard,
+		Err:          io.Discard,
 	}
 }
 
@@ -227,4 +235,169 @@ func TestOpen_ReportsWhyThePodCouldNotStartAndCleansUp(t *testing.T) {
 			assert.Empty(t, pods.Items)
 		})
 	}
+}
+
+// syncBuffer is a bytes.Buffer safe for Open's concurrent writers.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func TestOpen_RefusesABusyLocalPortBeforeCreatingAPod(t *testing.T) {
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = busy.Close() })
+
+	client := clusterWhere(runningAndReady)
+	ctx, cancel := context.WithCancel(t.Context())
+	var calls []forwardCall
+	opts := testOptions()
+	opts.LocalPort = busy.Addr().(*net.TCPAddr).Port
+
+	err = tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, opts)
+	assert.ErrorContains(t, err, "already in use")
+	assert.ErrorContains(t, err, "--local-port")
+	assert.Empty(t, client.Actions())
+}
+
+func TestOpen_TellsTheUserHowToConnectOnceForwarding(t *testing.T) {
+	for kind, hint := range map[string]string{
+		"postgres": "psql -h 127.0.0.1 -p 15432",
+		"mysql":    "mysql -h 127.0.0.1 -P 15432",
+	} {
+		t.Run(kind, func(t *testing.T) {
+			client := clusterWhere(runningAndReady)
+			ctx, cancel := context.WithCancel(t.Context())
+			var calls []forwardCall
+			out := &syncBuffer{}
+			opts := testOptions()
+			opts.Out = out
+
+			target := tunnel.Target{Kind: kind, Host: "orders.internal", Port: 5432}
+			require.NoError(t, tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), target, opts))
+
+			got := out.String()
+			assert.Contains(t, got, calls[0].pod)
+			assert.Contains(t, got, "tunnels")
+			assert.Contains(t, got, kind+" orders.internal:5432")
+			assert.Contains(t, got, "127.0.0.1:15432")
+			assert.Contains(t, got, hint)
+			assert.Contains(t, got, "Ctrl-C")
+		})
+	}
+}
+
+func TestOpen_StreamsPodLogsToStderr(t *testing.T) {
+	client := clusterWhere(runningAndReady)
+	ctx, cancel := context.WithCancel(t.Context())
+	errOut := &syncBuffer{}
+	opts := testOptions()
+	opts.Err = errOut
+
+	forward := func(_ context.Context, _, _ string, _, _ int, ready chan<- struct{}) error {
+		close(ready)
+		assert.Eventually(t, func() bool { return strings.Contains(errOut.String(), "fake logs") }, time.Second, 10*time.Millisecond)
+		cancel()
+		return nil
+	}
+	require.NoError(t, tunnel.Open(ctx, client, forward, pgTarget, opts))
+}
+
+func TestOpen_ReconnectsWhileThePodIsStillRunning(t *testing.T) {
+	restore := *tunnel.ReconnectDelay
+	*tunnel.ReconnectDelay = time.Millisecond
+	t.Cleanup(func() { *tunnel.ReconnectDelay = restore })
+
+	client := clusterWhere(runningAndReady)
+	ctx, cancel := context.WithCancel(t.Context())
+	errOut := &syncBuffer{}
+	opts := testOptions()
+	opts.Err = errOut
+
+	var ports []int
+	forward := func(_ context.Context, _, _ string, localPort, _ int, ready chan<- struct{}) error {
+		ports = append(ports, localPort)
+		close(ready)
+		if len(ports) == 1 {
+			return errors.New("lost connection to pod")
+		}
+		cancel()
+		return nil
+	}
+
+	require.NoError(t, tunnel.Open(ctx, client, forward, pgTarget, opts))
+	assert.Equal(t, []int{15432, 15432}, ports)
+	assert.Contains(t, errOut.String(), "reconnecting")
+}
+
+func TestOpen_FailsWithThePodReasonWhenThePodStops(t *testing.T) {
+	client := clusterWhere(runningAndReady)
+	forward := func(ctx context.Context, namespace, pod string, _, _ int, ready chan<- struct{}) error {
+		close(ready)
+		// Kubernetes enforces activeDeadlineSeconds.
+		p, err := client.CoreV1().Pods(namespace).Get(ctx, pod, metav1.GetOptions{})
+		require.NoError(t, err)
+		p.Status = corev1.PodStatus{Phase: corev1.PodFailed, Reason: "DeadlineExceeded", Message: "Pod was active on the node longer than the specified deadline"}
+		_, err = client.CoreV1().Pods(namespace).UpdateStatus(ctx, p, metav1.UpdateOptions{})
+		require.NoError(t, err)
+		return errors.New("lost connection to pod")
+	}
+
+	err := tunnel.Open(t.Context(), client, forward, pgTarget, testOptions())
+	assert.ErrorContains(t, err, "DeadlineExceeded")
+}
+
+func TestOpen_KeepsForbiddenErrorsRecognisable(t *testing.T) {
+	client := fake.NewClientset()
+	client.PrependReactor("create", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(corev1.Resource("pods"), "", errors.New(`User "jdoe" cannot create resource "pods"`))
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	var calls []forwardCall
+
+	err := tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions())
+	assert.True(t, apierrors.IsForbidden(err), "got %v", err)
+}
+
+func TestOpen_WarnsWhenThePodCannotBeDeleted(t *testing.T) {
+	client := clusterWhere(runningAndReady)
+	client.PrependReactor("delete", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("connection refused")
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	var calls []forwardCall
+	errOut := &syncBuffer{}
+	opts := testOptions()
+	opts.Err = errOut
+
+	require.NoError(t, tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, opts))
+	assert.Contains(t, errOut.String(), calls[0].pod)
+	assert.Contains(t, errOut.String(), "connection refused")
+	assert.Contains(t, errOut.String(), "max_duration")
+}
+
+func TestOpen_CtrlCWhileWaitingForThePodExitsCleanly(t *testing.T) {
+	client := clusterWhere(corev1.PodStatus{Phase: corev1.PodPending})
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	var calls []forwardCall
+
+	require.NoError(t, tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions()))
+	assert.Empty(t, calls)
+
+	pods, err := client.CoreV1().Pods("tunnels").List(t.Context(), metav1.ListOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, pods.Items)
 }
