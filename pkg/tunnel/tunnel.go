@@ -34,6 +34,11 @@ type Target struct {
 	Port int
 }
 
+// String describes the target as "<kind> <host>:<port>".
+func (t Target) String() string {
+	return t.Kind + " " + net.JoinHostPort(t.Host, strconv.Itoa(t.Port))
+}
+
 // Options controls where and how the tunnel pod runs.
 type Options struct {
 	Namespace    string
@@ -192,8 +197,7 @@ func checkLocalPortFree(port int) error {
 
 func printConnected(podName string, target Target, opts Options) {
 	_, _ = fmt.Fprintf(opts.Out, "✓ Tunnel pod %s ready (namespace %s)\n", podName, opts.Namespace)
-	_, _ = fmt.Fprintf(opts.Out, "→ %s %s is available at 127.0.0.1:%d\n",
-		target.Kind, net.JoinHostPort(target.Host, strconv.Itoa(target.Port)), opts.LocalPort)
+	_, _ = fmt.Fprintf(opts.Out, "→ %s is available at %s\n", target, localAddr(opts.LocalPort))
 	if hint := ClientHint(target.Kind, opts.LocalPort); hint != "" {
 		_, _ = fmt.Fprintln(opts.Out, "  "+hint)
 	}
