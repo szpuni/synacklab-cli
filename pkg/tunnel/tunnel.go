@@ -62,16 +62,14 @@ var (
 	podWatchInterval = 5 * time.Second
 )
 
-// clientHints shows how to connect a client, per target kind; %d is the local port.
-var clientHints = map[string]string{
-	"postgres": "psql -h 127.0.0.1 -p %d -U <user> <database>",
-	"mysql":    "mysql -h 127.0.0.1 -P %d -u <user> -p",
-}
-
 // Open runs a tunnel pod for target and forwards opts.LocalPort to it. It
 // blocks until ctx is cancelled (returning nil) or the tunnel fails, and
 // always deletes the pod it created.
 func Open(ctx context.Context, client corev1client.CoreV1Interface, forward Forwarder, target Target, opts Options) error {
+	return withRBACHint(open(ctx, client, forward, target, opts), opts.Namespace)
+}
+
+func open(ctx context.Context, client corev1client.CoreV1Interface, forward Forwarder, target Target, opts Options) error {
 	if err := ValidateHost(target.Host); err != nil {
 		return err
 	}
@@ -82,7 +80,7 @@ func Open(ctx context.Context, client corev1client.CoreV1Interface, forward Forw
 		return err
 	}
 
-	pod, err := client.Pods(opts.Namespace).Create(ctx, buildPod(target, opts, SanitizeUser(opts.User)), metav1.CreateOptions{})
+	pod, err := createPod(ctx, client, target, opts)
 	if err != nil {
 		return fmt.Errorf("failed to create tunnel pod in namespace %q: %w", opts.Namespace, err)
 	}
@@ -101,6 +99,7 @@ func Open(ctx context.Context, client corev1client.CoreV1Interface, forward Forw
 	defer stop()
 	wg.Go(func() { streamLogs(runCtx, client, pod.Name, opts) })
 
+	connected := false
 	for attempt := 0; ; attempt++ {
 		ready := make(chan struct{})
 		if attempt == 0 {
@@ -126,10 +125,22 @@ func Open(ctx context.Context, client corev1client.CoreV1Interface, forward Forw
 		if ctx.Err() != nil {
 			return nil
 		}
+		select {
+		case <-ready:
+			connected = true
+		default:
+		}
+		// Retrying cannot fix a denied request, nor a forward that never worked.
+		if apierrors.IsForbidden(err) || !connected {
+			return fmt.Errorf("port-forward to tunnel pod %s failed: %w", pod.Name, err)
+		}
 
 		current, getErr := getPodRetrying(ctx, client, opts.Namespace, pod.Name)
 		if ctx.Err() != nil {
 			return nil
+		}
+		if apierrors.IsNotFound(getErr) {
+			return fmt.Errorf("tunnel pod %s was deleted", pod.Name)
 		}
 		if getErr != nil {
 			return fmt.Errorf("port-forward to tunnel pod %s ended (%v) and the pod could not be checked: %w", pod.Name, err, getErr)
@@ -143,6 +154,16 @@ func Open(ctx context.Context, client corev1client.CoreV1Interface, forward Forw
 		case <-time.After(retryInterval):
 		case <-ctx.Done():
 			return nil
+		}
+	}
+}
+
+// createPod retries with a new random name suffix if the name is taken.
+func createPod(ctx context.Context, client corev1client.CoreV1Interface, target Target, opts Options) (*corev1.Pod, error) {
+	for attempt := 1; ; attempt++ {
+		pod, err := client.Pods(opts.Namespace).Create(ctx, buildPod(target, opts, SanitizeUser(opts.User)), metav1.CreateOptions{})
+		if !apierrors.IsAlreadyExists(err) || attempt == 3 {
+			return pod, err
 		}
 	}
 }
@@ -162,8 +183,8 @@ func printConnected(podName string, target Target, opts Options) {
 	_, _ = fmt.Fprintf(opts.Out, "✓ Tunnel pod %s ready (namespace %s)\n", podName, opts.Namespace)
 	_, _ = fmt.Fprintf(opts.Out, "→ %s %s is available at 127.0.0.1:%d\n",
 		target.Kind, net.JoinHostPort(target.Host, strconv.Itoa(target.Port)), opts.LocalPort)
-	if hint, ok := clientHints[target.Kind]; ok {
-		_, _ = fmt.Fprintf(opts.Out, "  "+hint+"\n", opts.LocalPort)
+	if e, ok := engines[target.Kind]; ok {
+		_, _ = fmt.Fprintf(opts.Out, "  "+e.clientHint+"\n", opts.LocalPort)
 	}
 	_, _ = fmt.Fprintln(opts.Out, "  Press Ctrl-C to close the tunnel")
 }
@@ -174,7 +195,7 @@ func streamLogs(ctx context.Context, client corev1client.CoreV1Interface, podNam
 	logs, err := client.Pods(opts.Namespace).GetLogs(podName, &corev1.PodLogOptions{Follow: true}).Stream(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
-			_, _ = fmt.Fprintf(opts.Err, "⚠️  Could not stream tunnel pod logs: %v\n", err)
+			_, _ = fmt.Fprintf(opts.Err, "⚠️  Could not stream tunnel pod logs: %v\n", withRBACHint(err, opts.Namespace))
 		}
 		return
 	}
@@ -183,10 +204,14 @@ func streamLogs(ctx context.Context, client corev1client.CoreV1Interface, podNam
 }
 
 // stopWhenPodStops calls stop once the pod leaves the Running phase (e.g.
-// killed at max_duration). Lookup errors are ignored; the next check retries.
+// killed at max_duration) or is deleted. Other lookup errors are ignored;
+// the next check retries.
 func stopWhenPodStops(ctx context.Context, stop context.CancelFunc, client corev1client.CoreV1Interface, namespace, name string) {
 	_ = wait.PollUntilContextCancel(ctx, podWatchInterval, false, func(ctx context.Context) (bool, error) {
 		pod, err := client.Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
 		return err == nil && pod.Status.Phase != corev1.PodRunning, nil
 	})
 	stop()
@@ -194,11 +219,15 @@ func stopWhenPodStops(ctx context.Context, stop context.CancelFunc, client corev
 
 // getPodRetrying retries the lookup through transient API errors, such as
 // the brief Forbidden responses of an API server whose RBAC cache is warming up.
+// NotFound is final: the pod was deleted.
 func getPodRetrying(ctx context.Context, client corev1client.CoreV1Interface, namespace, name string) (*corev1.Pod, error) {
 	var pod *corev1.Pod
 	var lastErr error
 	err := wait.PollUntilContextTimeout(ctx, retryInterval, podCheckTimeout, true, func(ctx context.Context) (bool, error) {
 		pod, lastErr = client.Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+		if apierrors.IsNotFound(lastErr) {
+			return false, lastErr
+		}
 		return lastErr == nil, nil
 	})
 	if err != nil && lastErr != nil {
@@ -222,6 +251,16 @@ func deletePod(client corev1client.CoreV1Interface, name string, opts Options) {
 	})
 	if err != nil {
 		_, _ = fmt.Fprintf(opts.Err, "⚠️  Failed to delete tunnel pod %s in namespace %s: %v\n"+
-			"   Kubernetes will remove it when max_duration (%s) expires.\n", name, opts.Namespace, err, opts.MaxDuration)
+			"   Kubernetes will remove it when max_duration (%s) expires.\n", name, opts.Namespace, withRBACHint(err, opts.Namespace), opts.MaxDuration)
 	}
+}
+
+// withRBACHint points a denied user at the RBAC setup. err stays matchable
+// with apierrors.IsForbidden.
+func withRBACHint(err error, namespace string) error {
+	if !apierrors.IsForbidden(err) {
+		return err
+	}
+	return fmt.Errorf("%w\nyour Kubernetes user is not allowed to run tunnels in namespace %q; "+
+		"ask a cluster admin to apply the RBAC setup in docs/tunnel.md", err, namespace)
 }

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"cmp"
 	"os"
 	"os/user"
 
@@ -44,8 +45,8 @@ func tunnelOptions(cfg config.TunnelConfig, localPort int) (tunnel.Options, erro
 		return tunnel.Options{}, err
 	}
 	opts := tunnel.Options{
-		Namespace:    firstNonEmpty(tunnelNamespace, cfg.Namespace, tunnel.DefaultNamespace),
-		Image:        firstNonEmpty(cfg.Image, tunnel.DefaultImage),
+		Namespace:    cmp.Or(tunnelNamespace, cfg.Namespace, tunnel.DefaultNamespace),
+		Image:        cmp.Or(cfg.Image, tunnel.DefaultImage),
 		MaxDuration:  lifetime,
 		NodeSelector: cfg.NodeSelector,
 		LocalPort:    localPort,
@@ -56,13 +57,4 @@ func tunnelOptions(cfg config.TunnelConfig, localPort int) (tunnel.Options, erro
 		opts.User = u.Username
 	}
 	return opts, nil
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }

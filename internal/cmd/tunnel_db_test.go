@@ -107,3 +107,19 @@ func TestResolveDBTarget_RejectsUnusableInput(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveDBTarget_ValidatesConfiguredDatabasesOnlyWhenUsingThem(t *testing.T) {
+	broken := config.TunnelConfig{Databases: []config.TunnelDatabase{
+		{Name: "orders", Engine: "oracle", Host: "orders.internal"},
+	}}
+
+	got, err := resolveDBTarget(broken, nil, dbTargetFlags{host: "db.internal", engine: "mysql"}, noPicker(t))
+	require.NoError(t, err, "an ad hoc --host target does not read tunnel.databases")
+	assert.Equal(t, tunnel.Target{Kind: "mysql", Host: "db.internal", Port: 3306}, got)
+
+	_, err = resolveDBTarget(broken, []string{"orders"}, dbTargetFlags{}, noPicker(t))
+	assert.ErrorContains(t, err, `database "orders"`)
+
+	_, err = resolveDBTarget(broken, nil, dbTargetFlags{}, noPicker(t))
+	assert.ErrorContains(t, err, `database "orders"`, "the picker only offers valid entries")
+}

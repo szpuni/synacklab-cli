@@ -3,7 +3,6 @@ package tunnel_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"net"
 	"strings"
@@ -14,7 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -211,8 +209,8 @@ func TestOpen_ReportsWhyThePodCouldNotStartAndCleansUp(t *testing.T) {
 			wantErr: []string{"Error", "exit code 1"},
 		},
 		"never ready": {
-			status:  corev1.PodStatus{Phase: corev1.PodPending},
-			wantErr: []string{"not ready after", "Pending"},
+			status:  waiting("ContainerCreating", ""),
+			wantErr: []string{"not ready after", "Pending", "ContainerCreating"},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -314,16 +312,4 @@ func TestOpen_StreamsPodLogsToStderr(t *testing.T) {
 		return nil
 	}
 	require.NoError(t, tunnel.Open(ctx, client.CoreV1(), forward, pgTarget, opts))
-}
-
-func TestOpen_KeepsForbiddenErrorsRecognisable(t *testing.T) {
-	client := fake.NewClientset()
-	client.PrependReactor("create", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
-		return true, nil, apierrors.NewForbidden(corev1.Resource("pods"), "", errors.New(`User "jdoe" cannot create resource "pods"`))
-	})
-	ctx, cancel := context.WithCancel(t.Context())
-	var calls []forwardCall
-
-	err := tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions())
-	assert.True(t, apierrors.IsForbidden(err), "got %v", err)
 }

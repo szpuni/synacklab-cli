@@ -188,3 +188,38 @@ func TestOpen_CtrlCWhileWaitingForThePodExitsCleanly(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, pods.Items)
 }
+
+func TestOpen_NoticesThePodBeingDeletedWhileTheTunnelIsIdle(t *testing.T) {
+	fastRetries(t)
+	client := clusterWhere(runningAndReady)
+
+	forward := func(ctx context.Context, namespace, pod string, _, _ int, ready chan struct{}) error {
+		close(ready)
+		require.NoError(t, client.CoreV1().Pods(namespace).Delete(ctx, pod, metav1.DeleteOptions{}))
+		<-ctx.Done()
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	err := tunnel.Open(ctx, client.CoreV1(), forward, pgTarget, testOptions())
+	assert.ErrorContains(t, err, "was deleted")
+}
+
+func TestOpen_RetriesWithAnotherNameWhenThePodNameIsTaken(t *testing.T) {
+	client := clusterWhere(runningAndReady)
+	collisions := 1
+	client.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if collisions > 0 {
+			collisions--
+			name := action.(k8stesting.CreateAction).GetObject().(*corev1.Pod).Name
+			return true, nil, apierrors.NewAlreadyExists(corev1.Resource("pods"), name)
+		}
+		return false, nil, nil
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	var calls []forwardCall
+
+	require.NoError(t, tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions()))
+	assert.Len(t, calls, 1)
+}

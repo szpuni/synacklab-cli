@@ -2,10 +2,12 @@ package tunnel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
@@ -30,7 +32,15 @@ func PortForwarder(config *rest.Config, client corev1client.CoreV1Interface, err
 		if err != nil {
 			return fmt.Errorf("failed to build port-forward dialer: %w", err)
 		}
+		// Keep a denied WebSocket upgrade's Forbidden status: client-go reports
+		// SPDY failures as plain text. RBAC checks WebSocket as `get` and SPDY
+		// as `create` on pods/portforward, so the SPDY fallback may still work.
+		var denied error
 		dialer = portforward.NewFallbackDialerForStreaming(websocketDialer, dialer, func(err error) bool {
+			var upgradeErr *httpstream.UpgradeFailureError
+			if errors.As(err, &upgradeErr) && apierrors.IsForbidden(upgradeErr.Cause) {
+				denied = upgradeErr.Cause
+			}
 			return httpstream.IsUpgradeFailure(err) || httpstream.IsHTTPSProxyError(err)
 		})
 
@@ -39,6 +49,15 @@ func PortForwarder(config *rest.Config, client corev1client.CoreV1Interface, err
 		if err != nil {
 			return fmt.Errorf("failed to set up port-forward: %w", err)
 		}
-		return fw.ForwardPorts()
+		err = fw.ForwardPorts()
+		select {
+		case <-ready: // connected, so any denial was overcome by the fallback
+			return err
+		default:
+		}
+		if err != nil && denied != nil {
+			return fmt.Errorf("%w (SPDY fallback: %v)", denied, err)
+		}
+		return err
 	}
 }

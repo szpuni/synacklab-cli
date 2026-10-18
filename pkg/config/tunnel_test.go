@@ -35,14 +35,14 @@ func TestLoadConfig_ReadsTunnelSection(t *testing.T) {
 			{Name: "billing", Engine: "mysql", Host: "10.20.3.15"},
 		},
 	}, cfg.Tunnel)
-	require.NoError(t, cfg.ValidateTunnel())
+	require.NoError(t, cfg.Tunnel.ValidateDatabases())
 }
 
-func TestValidateTunnel_AcceptsEmptySection(t *testing.T) {
-	assert.NoError(t, (&Config{}).ValidateTunnel())
+func TestValidateDatabases_AcceptsEmptySection(t *testing.T) {
+	assert.NoError(t, TunnelConfig{}.ValidateDatabases())
 }
 
-func TestValidateTunnel_NamesTheInvalidEntry(t *testing.T) {
+func TestValidateDatabases_NamesTheInvalidEntry(t *testing.T) {
 	valid := TunnelDatabase{Name: "orders", Engine: "postgres", Host: "orders.internal"}
 	for name, tc := range map[string]struct {
 		tunnel  TunnelConfig
@@ -68,17 +68,9 @@ func TestValidateTunnel_NamesTheInvalidEntry(t *testing.T) {
 			tunnel:  TunnelConfig{Databases: []TunnelDatabase{valid, valid}},
 			wantErr: `duplicate database name "orders"`,
 		},
-		"bad max_duration": {
-			tunnel:  TunnelConfig{MaxDuration: "forever"},
-			wantErr: "tunnel.max_duration",
-		},
-		"non-positive max_duration": {
-			tunnel:  TunnelConfig{MaxDuration: "0s"},
-			wantErr: "tunnel.max_duration",
-		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			err := (&Config{Tunnel: tc.tunnel}).ValidateTunnel()
+			err := tc.tunnel.ValidateDatabases()
 			assert.ErrorContains(t, err, tc.wantErr)
 		})
 	}
@@ -92,4 +84,14 @@ func TestTunnelLifetime_DefaultsToEightHours(t *testing.T) {
 	got, err = TunnelConfig{MaxDuration: "90m"}.Lifetime()
 	require.NoError(t, err)
 	assert.Equal(t, 90*time.Minute, got)
+}
+
+func TestTunnelLifetime_RejectsWhatThePodDeadlineCannotExpress(t *testing.T) {
+	// activeDeadlineSeconds is a whole, positive number of seconds.
+	for _, value := range []string{"forever", "0s", "-1h", "500ms", "90.5s"} {
+		t.Run(value, func(t *testing.T) {
+			_, err := TunnelConfig{MaxDuration: value}.Lifetime()
+			assert.ErrorContains(t, err, "tunnel.max_duration")
+		})
+	}
 }

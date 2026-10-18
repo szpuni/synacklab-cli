@@ -12,7 +12,6 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"synacklab/pkg/config"
 	"synacklab/pkg/fuzzy"
@@ -61,10 +60,6 @@ func runTunnelDB(_ *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := cfg.ValidateTunnel(); err != nil {
-		return err
-	}
-
 	target, err := resolveDBTarget(cfg.Tunnel, args, dbFlags, pickDatabase)
 	if err != nil {
 		return err
@@ -86,12 +81,7 @@ func runTunnelDB(_ *cobra.Command, args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	err = tunnel.Open(ctx, client, tunnel.PortForwarder(restConfig, client, os.Stderr), target, opts)
-	if apierrors.IsForbidden(err) {
-		return fmt.Errorf("%w\nyour Kubernetes user is not allowed to run tunnels in namespace %q; "+
-			"ask a cluster admin to apply the RBAC setup in docs/tunnel.md", err, opts.Namespace)
-	}
-	return err
+	return tunnel.Open(ctx, client, tunnel.PortForwarder(restConfig, client, os.Stderr), target, opts)
 }
 
 // resolveDBTarget picks the database from a name argument, the ad hoc
@@ -109,6 +99,9 @@ func resolveDBTarget(cfg config.TunnelConfig, args []string, flags dbTargetFlags
 	}
 	if flags.engine != "" || flags.port != 0 {
 		return tunnel.Target{}, errors.New("--engine and --port describe an ad hoc target and require --host")
+	}
+	if err := cfg.ValidateDatabases(); err != nil {
+		return tunnel.Target{}, err
 	}
 
 	name := ""

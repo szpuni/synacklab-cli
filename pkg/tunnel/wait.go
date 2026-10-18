@@ -67,7 +67,7 @@ func podReady(pod *corev1.Pod) (bool, error) {
 	return false, nil
 }
 
-// describe summarises the pod's phase and reason for error messages.
+// describe summarises the pod's phase and reasons for error messages.
 func describe(pod *corev1.Pod) string {
 	if pod == nil {
 		return "pod status unknown"
@@ -78,6 +78,15 @@ func describe(pod *corev1.Pod) string {
 	}
 	if pod.Status.Message != "" {
 		s += ": " + pod.Status.Message
+	}
+	// While Pending, the useful reason (e.g. ContainerCreating) is the container's.
+	for _, cs := range pod.Status.ContainerStatuses {
+		if w := cs.State.Waiting; w != nil {
+			s += ", container " + w.Reason
+			if w.Message != "" {
+				s += ": " + w.Message
+			}
+		}
 	}
 	return s
 }

@@ -152,14 +152,11 @@ func (c *Config) ValidateGitHub() error {
 	return nil
 }
 
-// ValidateTunnel validates tunnel-specific configuration
-func (c *Config) ValidateTunnel() error {
-	if _, err := c.Tunnel.Lifetime(); err != nil {
-		return err
-	}
-
+// ValidateDatabases validates tunnel.databases. It is checked only when a
+// command uses them, so a broken entry never blocks an ad hoc --host tunnel.
+func (t TunnelConfig) ValidateDatabases() error {
 	seen := make(map[string]bool)
-	for i, db := range c.Tunnel.Databases {
+	for i, db := range t.Databases {
 		if db.Name == "" {
 			return fmt.Errorf("tunnel.databases[%d]: name is required", i)
 		}
@@ -167,20 +164,23 @@ func (c *Config) ValidateTunnel() error {
 			return fmt.Errorf("tunnel.databases: duplicate database name %q", db.Name)
 		}
 		seen[db.Name] = true
-
-		if _, err := tunnel.DefaultPort(db.Engine); err != nil {
+		if err := validateDatabase(db); err != nil {
 			return fmt.Errorf("tunnel.databases: database %q: %w", db.Name, err)
-		}
-		if err := tunnel.ValidateHost(db.Host); err != nil {
-			return fmt.Errorf("tunnel.databases: database %q: %w", db.Name, err)
-		}
-		if db.Port != 0 {
-			if err := tunnel.ValidatePort(db.Port); err != nil {
-				return fmt.Errorf("tunnel.databases: database %q: %w", db.Name, err)
-			}
 		}
 	}
+	return nil
+}
 
+func validateDatabase(db TunnelDatabase) error {
+	if _, err := tunnel.DefaultPort(db.Engine); err != nil {
+		return err
+	}
+	if err := tunnel.ValidateHost(db.Host); err != nil {
+		return err
+	}
+	if db.Port != 0 {
+		return tunnel.ValidatePort(db.Port)
+	}
 	return nil
 }
 
@@ -190,8 +190,9 @@ func (t TunnelConfig) Lifetime() (time.Duration, error) {
 		return tunnel.DefaultMaxDuration, nil
 	}
 	d, err := time.ParseDuration(t.MaxDuration)
-	if err != nil || d <= 0 {
-		return 0, fmt.Errorf("tunnel.max_duration %q must be a positive duration such as 8h or 90m", t.MaxDuration)
+	// It becomes the pod's activeDeadlineSeconds: whole seconds, at least 1.
+	if err != nil || d < time.Second || d%time.Second != 0 {
+		return 0, fmt.Errorf("tunnel.max_duration %q must be a whole number of seconds (at least 1s), such as 8h or 90m", t.MaxDuration)
 	}
 	return d, nil
 }
