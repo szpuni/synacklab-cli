@@ -112,7 +112,7 @@ Pure function, table-tested. Produces:
 
 ```yaml
 metadata:
-  generateName: synacklab-tunnel-<user>-
+  name: synacklab-tunnel-<user>-<5 random chars>   # set client-side
   namespace: <ns>
   labels:
     app.kubernetes.io/managed-by: synacklab

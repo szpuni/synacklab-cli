@@ -29,11 +29,14 @@
   - Verify: `go test ./pkg/tunnel ./pkg/config`
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 1.5_
 
-- [ ] 3. Add client-go and build the tunnel pod (TDD)
+- [x] 3. Add client-go and build the tunnel pod (TDD)
   - `go get k8s.io/client-go k8s.io/api k8s.io/apimachinery` v0.37 (same minor for
     all three)
-  - Pin the default socat image by digest
-  - Write `pkg/tunnel/pod_test.go` first: generateName, labels, argv,
+  - Pin the default socat image by digest (`alpine/socat:1.8.1.1@sha256:7f9a…`;
+    entrypoint is `socat`, image user is root, hence `runAsUser: 65534`)
+  - Write tests first, through `Open` in `pkg/tunnel/tunnel_test.go` (stub
+    `Forwarder` reads the created pod from the fake clientset): name prefix +
+    random suffix (set client-side; the fake clientset ignores `generateName`), labels, argv,
     restartPolicy, automount off, deadline from `MaxDuration`, nodeSelector,
     pod/container security contexts, probe, resources
   - Implement `pkg/tunnel/pod.go`
