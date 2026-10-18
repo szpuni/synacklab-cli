@@ -4,14 +4,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"synacklab/pkg/tunnel"
 )
 
 // Config represents the synacklab configuration
 type Config struct {
 	AWS    AWSConfig    `yaml:"aws"`
 	GitHub GitHubConfig `yaml:"github"`
+	Tunnel TunnelConfig `yaml:"tunnel,omitempty"`
 	// LogLevel controls console log verbosity: "error", "warn", or "info"
 	// (default "info" if empty). See pkg/log.ParseLevel.
 	LogLevel string `yaml:"log_level,omitempty"`
@@ -32,6 +36,24 @@ type SSOConfig struct {
 type GitHubConfig struct {
 	Token        string `yaml:"token,omitempty"`
 	Organization string `yaml:"organization,omitempty"`
+}
+
+// TunnelConfig represents `synacklab tunnel` configuration
+type TunnelConfig struct {
+	Namespace    string            `yaml:"namespace,omitempty"`
+	Image        string            `yaml:"image,omitempty"`
+	MaxDuration  string            `yaml:"max_duration,omitempty"`
+	NodeSelector map[string]string `yaml:"node_selector,omitempty"`
+	Databases    []TunnelDatabase  `yaml:"databases,omitempty"`
+}
+
+// TunnelDatabase is a named database target for `synacklab tunnel db`.
+// Port 0 means the engine's default port.
+type TunnelDatabase struct {
+	Name   string `yaml:"name"`
+	Engine string `yaml:"engine"`
+	Host   string `yaml:"host"`
+	Port   int    `yaml:"port,omitempty"`
 }
 
 // LoadConfig loads configuration from the default location
@@ -128,4 +150,54 @@ func (c *Config) ValidateGitHub() error {
 	}
 
 	return nil
+}
+
+// ValidateDatabases validates tunnel.databases. It is checked only when a
+// command uses them, so a broken entry never blocks an ad hoc --host tunnel.
+func (t TunnelConfig) ValidateDatabases() error {
+	seen := make(map[string]bool)
+	for i, db := range t.Databases {
+		if db.Name == "" {
+			return fmt.Errorf("tunnel.databases[%d]: name is required", i)
+		}
+		if seen[db.Name] {
+			return fmt.Errorf("tunnel.databases: duplicate database name %q", db.Name)
+		}
+		seen[db.Name] = true
+		if _, err := db.Target(); err != nil {
+			return fmt.Errorf("tunnel.databases: database %q: %w", db.Name, err)
+		}
+	}
+	return nil
+}
+
+// Target returns the tunnel target for this database, with the engine's
+// default port when Port is 0. It is the one definition of a valid target.
+func (db TunnelDatabase) Target() (tunnel.Target, error) {
+	port, err := tunnel.DefaultPort(db.Engine)
+	if err != nil {
+		return tunnel.Target{}, err
+	}
+	if db.Port != 0 {
+		port = db.Port
+	}
+	target := tunnel.Target{Kind: db.Engine, Host: db.Host, Port: port}
+	if err := target.Validate(); err != nil {
+		return tunnel.Target{}, err
+	}
+	return target, nil
+}
+
+// ParseMaxDuration returns tunnel.max_duration parsed, or
+// tunnel.DefaultMaxDuration if unset.
+func (t TunnelConfig) ParseMaxDuration() (time.Duration, error) {
+	if t.MaxDuration == "" {
+		return tunnel.DefaultMaxDuration, nil
+	}
+	d, err := time.ParseDuration(t.MaxDuration)
+	// It becomes the pod's activeDeadlineSeconds: whole seconds, at least 1.
+	if err != nil || d < time.Second || d%time.Second != 0 {
+		return 0, fmt.Errorf("tunnel.max_duration %q must be a whole number of seconds (at least 1s), such as 8h or 90m", t.MaxDuration)
+	}
+	return d, nil
 }

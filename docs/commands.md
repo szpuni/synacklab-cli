@@ -296,6 +296,56 @@ synacklab github validate multi-repos.yaml --repos repo1,repo2
 - Repository permissions
 - Configuration format compatibility
 
+## Tunnel Commands
+
+### `synacklab tunnel`
+
+Parent command for local tunnels to private services through Kubernetes. See
+[Tunnels](tunnel.md) for how it works and the cluster setup it needs.
+
+**Global Options:**
+- `--context string`: kube context to use (default: current context)
+- `-n, --namespace string`: namespace for the tunnel pod (default: `tunnel.namespace`, else `synacklab-tunnels`)
+
+**Subcommands:**
+- `db` - Tunnel to a MySQL or PostgreSQL database
+
+### `synacklab tunnel db`
+
+Forward a local port to a database through a short-lived socat pod. Press
+Ctrl-C to close the tunnel and delete the pod.
+
+```bash
+synacklab tunnel db [name] [flags]
+```
+
+**Options:**
+- `--host string`: database hostname or IP (ad hoc target, requires `--engine`)
+- `--engine string`: database engine for `--host`: `mysql` or `postgres`
+- `--port int`: database port for `--host` (default: engine port)
+- `--local-port int`: local port to listen on (default: database port)
+
+**Examples:**
+```bash
+# Pick from tunnel.databases interactively
+synacklab tunnel db
+
+# Configured database by name
+synacklab tunnel db prod-orders
+
+# Ad hoc target on a non-default local port
+synacklab tunnel db --engine mysql --host 10.20.3.15 --local-port 13306
+
+# Another cluster and namespace
+synacklab tunnel db prod-orders --context prod -n tunnels
+```
+
+**Behavior:**
+- Listens on `127.0.0.1` only
+- Streams the tunnel pod's errors (refused or timed-out database connections) to stderr
+- Reconnects while the pod is running; exits with the pod's reason if it stops (e.g. `max_duration` reached)
+- Deletes the pod on exit; Kubernetes removes it after `max_duration` regardless
+
 ## Command Patterns
 
 ### Interactive vs Non-Interactive

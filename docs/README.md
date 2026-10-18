@@ -14,6 +14,7 @@ Welcome to the comprehensive documentation for Synacklab CLI, a powerful DevOps 
 - [Kubernetes Management](kubernetes.md) - Manage EKS clusters and contexts
 - [GitHub Repository Management](github.md) - Declarative GitHub repository configuration
 - [Runbook Server](runbook.md) - Interactive, human-in-the-loop Markdown runbooks
+- [Tunnels](tunnel.md) - Reach private databases through a Kubernetes socat pod
 
 ### Advanced Usage
 - [Command Reference](commands.md) - Complete command documentation

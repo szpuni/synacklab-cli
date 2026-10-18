@@ -48,3 +48,6 @@ config.yaml
 .synacklab/
 
 graphify-out/
+
+# Cezar config file
+.ai/

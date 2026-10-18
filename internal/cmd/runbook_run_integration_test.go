@@ -19,17 +19,14 @@ func TestRunRunbookRun_EndToEndWithSetAndDiskLogging(t *testing.T) {
 	require.NoError(t, os.WriteFile(docPath, []byte(
 		"```bash {name=greet, input=NAME}\necho hello $NAME\n```\n"), 0o644))
 
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(dir))
-	t.Cleanup(func() { _ = os.Chdir(wd) })
+	t.Chdir(dir)
 
 	origNonInteractive, origSets := runNonInteractive, runSetFlags
 	runNonInteractive = true
 	runSetFlags = []string{"NAME=world"}
 	t.Cleanup(func() { runNonInteractive, runSetFlags = origNonInteractive, origSets })
 
-	err = runRunbookRun(nil, []string{docPath})
+	err := runRunbookRun(nil, []string{docPath})
 	require.NoError(t, err)
 
 	entries, readErr := os.ReadDir(findSessionDir(t, filepath.Join(dir, ".synacklab", "deploy")))

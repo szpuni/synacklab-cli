@@ -24,16 +24,13 @@ func TestRunRunbookRun_MissingInputPointsAtSetFlag(t *testing.T) {
 	dir := t.TempDir()
 	docPath := filepath.Join(dir, "deploy.md")
 	require.NoError(t, os.WriteFile(docPath, []byte("```bash {name=greet, input=NAME}\necho hello $NAME\n```\n"), 0o644))
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(dir))
-	t.Cleanup(func() { _ = os.Chdir(wd) })
+	t.Chdir(dir)
 
 	origNonInteractive, origSets := runNonInteractive, runSetFlags
 	runNonInteractive, runSetFlags = true, nil
 	t.Cleanup(func() { runNonInteractive, runSetFlags = origNonInteractive, origSets })
 
-	err = runRunbookRun(nil, []string{docPath})
+	err := runRunbookRun(nil, []string{docPath})
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "NAME")

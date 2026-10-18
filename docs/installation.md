@@ -4,7 +4,8 @@ This guide covers all methods for installing Synacklab CLI on your system.
 
 ## Prerequisites
 
-- **Go 1.21 or later** (for building from source)
+- **Go 1.26 or later** (for building from source)
+- **macOS 12 (Monterey) or later** for prebuilt macOS binaries
 - **Git** (for cloning the repository)
 - **AWS CLI** (optional, but recommended for AWS integration)
 

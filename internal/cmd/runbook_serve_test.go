@@ -124,10 +124,7 @@ func TestBuildRunbookServer_ActiveFileIsReportedWithRelativeArgs(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "RUNBOOK.md"), []byte("```bash {name=hello}\necho hi\n```\n"), 0o644))
 
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(dir))
-	t.Cleanup(func() { _ = os.Chdir(wd) })
+	t.Chdir(dir)
 
 	root, initialFile, err := resolveServeTarget("") // relative: "." and "RUNBOOK.md"
 	require.NoError(t, err)

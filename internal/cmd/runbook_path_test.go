@@ -94,10 +94,7 @@ func TestResolveRunbookPath_EmptyArgDefaultsToCurrentDirectory(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "RUNBOOK.md"), "content")
 
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-	require.NoError(t, os.Chdir(dir))
-	t.Cleanup(func() { _ = os.Chdir(wd) })
+	t.Chdir(dir)
 
 	got, err := resolveRunbookPath("")
 	require.NoError(t, err)
