@@ -13,7 +13,7 @@
     `runbook serve --bind 0.0.0.0` fails; curl with `Host: evil.example` → 403
   - _Requirements: 4.1, 4.2, 4.3, 5.1, 5.2, 5.3, 5.4, 5.5_
 
-- [ ] 2. Embedded kit assets
+- [x] 2. Embedded kit assets
   - Move `:root` tokens from runbook `app.css` to `pkg/webui/assets/tokens.css`;
     move generic component CSS (btn, badge, field, empty-state, shell, output)
     to `components.css`
@@ -24,7 +24,7 @@
   - Verify: `go test ./pkg/webui ./pkg/runbook`
   - _Requirements: 1.1, 1.2, 1.3, 2.1, 2.2, 2.3_
 
-- [ ] 3. Migrate runbook UI onto the kit
+- [x] 3. Migrate runbook UI onto the kit
   - `index.html` links `/ui/` CSS and loads `app.js` as a module;
     `session.js` exports what `app.js` uses
   - Replace `createConfirmGate`, `escapeHTML`/`innerHTML` building, and
@@ -33,9 +33,12 @@
   - Verify: `go test ./...`; Puppeteer pass over Requirement 3.1 features
     (open file, run step, stop, confirm gate, sensitive reveal, vars, last run
     + log, reset) with screenshots before/after showing no visual change
+  - `steps.css` was down to three rules after the move and is folded into
+    `app.css`. The kit's `[hidden]` rule fixes a pre-existing bug: `.btn`'s
+    `display` overrode `hidden`, so every idle step showed a Stop button
   - _Requirements: 3.1, 3.2, 3.3, 2.4_
 
-- [ ] 4. Docs and gates
+- [x] 4. Docs and gates
   - `docs/runbook.md` `--bind` loopback-only; supersede note on
     runbook-server-bootstrap 13.2; `CLAUDE.md` architecture entry for
     `pkg/webui`

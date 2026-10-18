@@ -66,10 +66,11 @@ automatically; otherwise pick one from the sidebar. You can switch to a
 different file in the sidebar at any time — that resets the session (vars,
 cwd, history) to the newly opened document.
 
-Binds to `127.0.0.1` by default; passing `--bind` with any non-loopback
-address prints an explicit warning before starting, since v1 has no
-authentication — anyone who can reach the port can execute arbitrary
-commands as the local user. `--cwd` overrides the session's initial working
+Binds to `127.0.0.1` by default. `--bind` accepts only loopback addresses
+(`127.0.0.1`, `::1`, `localhost`): the UI runs commands as you and has no
+authentication, so it is never exposed beyond your machine. The server also
+rejects requests addressed to another host name or sent from another
+website. `--cwd` overrides the session's initial working
 directory (default: each opened file's own directory).
 
 ### `synacklab runbook run [path] --non-interactive [--set VAR=value ...]`

@@ -156,7 +156,7 @@ for CI, and `fmt` canonicalizes fence attribute formatting. Source: `docs/specs/
 #### Acceptance Criteria
 
 1. WHEN `synacklab serve` starts without `--bind` THEN the system SHALL bind to `127.0.0.1` only.
-2. WHEN `--bind 0.0.0.0` (or any non-loopback address) is passed THEN the system SHALL print an explicit warning that anyone reaching the port can execute arbitrary commands as the local user, before starting.
+2. ~~WHEN `--bind 0.0.0.0` (or any non-loopback address) is passed THEN the system SHALL print an explicit warning that anyone reaching the port can execute arbitrary commands as the local user, before starting.~~ Superseded by web-ui-kit Requirement 5.1: a non-loopback `--bind` is refused.
 3. WHEN the server starts THEN the system SHALL implement no authentication in v1, consistent with the documented non-goal.
 
 ### Requirement 14 — Session state model

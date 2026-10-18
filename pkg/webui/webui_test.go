@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -151,4 +152,27 @@ func TestServe_ServesUntilCanceled(t *testing.T) {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	assert.Equal(t, "ok", string(body))
+}
+
+func TestAssets_ServesKitWithBrowserContentTypes(t *testing.T) {
+	cases := map[string]string{
+		"/tokens.css":     "text/css",
+		"/components.css": "text/css",
+		"/components.js":  "text/javascript",
+	}
+	for path, contentType := range cases {
+		rec := httptest.NewRecorder()
+		Assets().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		require.Equal(t, http.StatusOK, rec.Code, path)
+		assert.Contains(t, rec.Header().Get("Content-Type"), contentType, path)
+		assert.NotEmpty(t, rec.Body.String(), path)
+	}
+}
+
+func TestAssets_ComponentsExportTheKit(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Assets().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/components.js", nil))
+	for _, name := range []string{"h", "button", "confirmButton", "field", "textInput", "select", "badge", "card", "logView", "emptyState", "revealToggle"} {
+		assert.Regexp(t, `export function `+name+`\(`, rec.Body.String())
+	}
 }

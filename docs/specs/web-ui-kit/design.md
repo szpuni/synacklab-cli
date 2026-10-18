@@ -20,7 +20,7 @@ pkg/runbook/web/     runbook-only: file tree, steps, vars panel
   index.html         <link href="/ui/tokens.css">, <link href="/ui/components.css">,
                      <script type="module" src="app.js">
   app.js, session.js ES modules importing from "/ui/components.js"
-  app.css, steps.css runbook-specific rules only
+  app.css            runbook-specific rules only (steps.css folded in)
 ```
 
 ## Front end
@@ -35,7 +35,9 @@ behavior. Text goes in through `textContent` only.
 export function h(tag, props = {}, ...children) { … }   // props: className, attrs, on: {click: fn}
 export function button({ label, variant = "ghost", size = "sm", onClick }) { … }
 export function confirmButton({ label, armLabel, variant, onConfirm }) { … } // → {el, reset}
-export function field({ label, input, secret = false }) { … }               // reveal toggle when secret
+export function field({ label, control, secret = false }) { … }             // reveal toggle when secret
+export function textInput(props) { … }
+export function revealToggle(onToggle) { … }
 export function select({ name, options, value }) { … }                      // options: [{value, label}]
 export function badge(text, tone = "neutral") { … }                         // neutral|success|warning|danger
 export function card({ title, badges = [], body = [], actions = [] }) { … }

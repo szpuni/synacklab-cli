@@ -4,8 +4,10 @@ package webui
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"time"
@@ -48,4 +50,18 @@ func Serve(ctx context.Context, ln net.Listener, h http.Handler, logger *rblog.L
 		defer cancel()
 		return httpServer.Shutdown(shutdownCtx)
 	}
+}
+
+//go:embed assets
+var assetsFS embed.FS
+
+// Assets serves the embedded component kit. Apps mount it at /ui/:
+//
+//	mux.Handle("GET /ui/", http.StripPrefix("/ui", webui.Assets()))
+func Assets() http.Handler {
+	sub, err := fs.Sub(assetsFS, "assets")
+	if err != nil {
+		panic(err) // assets/ is embedded at build time; a missing dir is a build bug
+	}
+	return http.FileServer(http.FS(sub))
 }

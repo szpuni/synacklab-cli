@@ -1,131 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+/* app.css: runbook-specific styles. Tokens and shared components come from
+   /ui/tokens.css and /ui/components.css. */
 
-/* ── Design tokens (muted slate-blue accent, light surfaces) ─────────── */
-:root {
-  --bg-base:      #FAFAFA;
-  --bg-surface:   #FFFFFF;
-  --bg-elevated:  #F4F4F5;
-  --bg-subtle:    #F7F7F8;
-
-  --border-subtle:  #E7E7EA;
-  --border-default: #D6D6DA;
-
-  --text-primary:   #1B1B1F;
-  --text-secondary: #54545C;
-  --text-muted:     #A2A2A9;
-
-  --accent-700: #2C3C51;
-  --accent-600: #3B516C;
-  --accent-500: #4A6483;
-  --accent-400: #7590AC;
-  --accent-100: #DCE4EC;
-  --accent-50:  #EEF2F6;
-
-  --success-600: #33604A;
-
-  --danger-600: #C0392B;
-  --danger-700: #FBEAE8;
-
-  --warning-700: #FBF3E3;
-  --warning-500: #8A5A0B;
-
-  --sidebar-w: 240px;
-
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-full: 9999px;
-
-  --shadow-sm: 0 1px 3px rgba(24,24,27,0.06), 0 1px 2px rgba(24,24,27,0.04);
-  --shadow-md: 0 4px 14px rgba(24,24,27,0.08), 0 1px 3px rgba(24,24,27,0.05);
-
-  --transition-fast: 150ms ease;
-
-  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
-}
-
-* { box-sizing: border-box; }
-
-html, body {
-  margin: 0;
-  height: 100%;
-}
-
-body {
-  font-family: var(--font-sans);
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--text-primary);
-  background: var(--bg-base);
-  -webkit-font-smoothing: antialiased;
-}
-
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: var(--radius-full); }
-
-:focus-visible {
-  outline: 2px solid var(--accent-500);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
-}
-
-/* ── App shell ───────────────────────────────────────────────────────── */
-.app {
-  display: flex;
-  height: 100vh;
-}
-
-.sidebar-toggle {
-  display: none;
-  position: fixed;
-  top: 10px;
-  left: 10px;
-  z-index: 20;
-  border: none;
-  background: var(--accent-500);
-  color: #fff;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-md);
-  font-size: 16px;
-  cursor: pointer;
-  box-shadow: var(--shadow-md);
-}
-
-.sidebar {
-  width: var(--sidebar-w);
-  flex-shrink: 0;
-  background: var(--bg-surface);
-  border-right: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.sidebar-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 18px 16px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.logo-icon {
-  color: var(--accent-500);
-  font-size: 15px;
-}
-
-.sidebar-title {
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: -0.01em;
-  color: var(--text-primary);
-}
-
+/* ── File browser ────────────────────────────────────────────────────── */
 .file-tree {
   flex: 1;
   overflow-y: auto;
@@ -198,33 +74,6 @@ body {
   color: var(--text-muted);
 }
 
-/* ── Main pane ───────────────────────────────────────────────────────── */
-.main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 24px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-}
-
-.topbar-info {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  min-width: 0;
-}
-
 .active-file {
   font-weight: 600;
   color: var(--text-primary);
@@ -266,18 +115,6 @@ body {
 
 .var-chip-name { font-weight: 600; color: var(--text-primary); }
 
-.reveal-toggle {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-  padding: 2px;
-}
-
-.reveal-toggle:hover { color: var(--text-primary); }
-
 .step-last-run {
   display: flex;
   align-items: center;
@@ -309,18 +146,37 @@ main.doc {
 
 .doc-inner { max-width: 860px; margin: 0 auto; }
 
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 20vh 1rem;
-  color: var(--text-muted);
-  text-align: center;
+/* ── Step cards ──────────────────────────────────────────────────────── */
+.step pre.source {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  margin: 0 0 12px;
 }
 
-.empty-state-icon { font-size: 32px; opacity: 0.5; }
+.inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.confirm-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--warning-700);
+  border: 1px solid rgba(202, 138, 4, 0.25);
+  color: var(--warning-500);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  font-size: 12.5px;
+}
 
 /* ── Prose ───────────────────────────────────────────────────────────── */
 .prose { margin: 16px 0; color: var(--text-secondary); }
@@ -344,64 +200,7 @@ main.doc {
 }
 .prose pre code { background: none; padding: 0; }
 
-/* Step card styles (badges, inputs, output panel) live in steps.css, loaded
-   after this file — see that file's header comment. */
-
-/* ── Buttons ─────────────────────────────────────────────────────────── */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  font-family: var(--font-sans);
-  font-weight: 600;
-  border: none;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: background-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast), opacity var(--transition-fast);
-  white-space: nowrap;
-}
-
-.btn:active:not(:disabled) { transform: scale(0.97); }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
-
-.btn-sm { padding: 6px 16px; font-size: 12.5px; }
-.btn-md { padding: 9px 22px; font-size: 13.5px; }
-
-.btn-primary {
-  background: var(--accent-500);
-  color: #fff;
-}
-.btn-primary:hover:not(:disabled) { background: var(--accent-600); }
-
-.btn-danger {
-  background: var(--danger-600);
-  color: #fff;
-}
-.btn-danger:hover:not(:disabled) { background: #99392C; }
-
-.btn-ghost {
-  background: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-default);
-}
-.btn-ghost:hover:not(:disabled) { background: var(--bg-elevated); color: var(--text-primary); }
-
 /* ── Responsive ──────────────────────────────────────────────────────── */
 @media (max-width: 800px) {
-  .sidebar-toggle { display: block; }
-
-  .sidebar {
-    position: fixed;
-    inset: 0 25% 0 0;
-    z-index: 15;
-    transform: translateX(-100%);
-    transition: transform var(--transition-fast);
-    width: auto;
-  }
-
-  .sidebar.open { transform: translateX(0); box-shadow: var(--shadow-md); }
-
-  .topbar { padding-left: 56px; }
   main.doc { padding: 20px 16px 48px; }
 }

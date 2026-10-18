@@ -24,7 +24,7 @@ func TestRoutes_ServesEmbeddedFrontend(t *testing.T) {
 func TestRoutes_ServesEmbeddedStaticAssets(t *testing.T) {
 	srv := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
 
-	for _, path := range []string{"/app.js", "/app.css"} {
+	for _, path := range []string{"/app.js", "/session.js", "/app.css", "/ui/components.js", "/ui/tokens.css", "/ui/components.css"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		srv.Routes().ServeHTTP(rec, req)
@@ -45,4 +45,20 @@ func TestRoutes_FrontendReferencesRealEndpoints(t *testing.T) {
 	for _, endpoint := range []string{"/api/doc", "/api/session", "/api/session/reset", "/api/steps/", "/ws/executions/"} {
 		assert.True(t, strings.Contains(js, endpoint), "app.js should reference %s", endpoint)
 	}
+}
+
+func TestRoutes_PageLoadsTheSharedKit(t *testing.T) {
+	srv := newTestServer(t, "```bash {name=hello}\necho hi\n```\n")
+
+	get := func(path string) string {
+		rec := httptest.NewRecorder()
+		srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		return rec.Body.String()
+	}
+	html := get("/")
+	assert.Contains(t, html, `href="/ui/tokens.css"`)
+	assert.Contains(t, html, `href="/ui/components.css"`)
+	assert.Contains(t, html, `<script type="module" src="app.js">`)
+	assert.Contains(t, get("/app.js"), `from "/ui/components.js"`)
+	assert.NotContains(t, get("/app.css"), ":root", "tokens live in /ui/tokens.css")
 }

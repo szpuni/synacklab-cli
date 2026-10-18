@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	rblog "synacklab/pkg/log"
+	"synacklab/pkg/webui"
 )
 
 //go:embed web
@@ -87,6 +88,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/executions/{id}/cancel", s.handleCancelExecution)
 	mux.HandleFunc("GET /api/files", s.handleGetFiles)
 	mux.HandleFunc("POST /api/open", s.handlePostOpen)
+	mux.Handle("GET /ui/", http.StripPrefix("/ui", webui.Assets()))
 	mux.Handle("GET /", http.FileServer(webRoot()))
 	return mux
 }

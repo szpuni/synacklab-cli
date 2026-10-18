@@ -1,11 +1,9 @@
 // session.js renders session state (Requirement 2): the captured-vars chip
 // list, each step's most-recent-run line, and the on-demand log viewer.
-// Loaded before app.js, which shares its top-level bindings (lastDoc,
-// varsPanelEl) via the page's global scope — both script tags are classic
-// (non-module) scripts in the same document.
-const varsPanelEl = document.getElementById("vars-panel");
+import { h, button, revealToggle } from "/ui/components.js";
 
-let lastDoc = null;
+const varsPanelEl = document.getElementById("vars-panel");
+const MASK = "••••••";
 
 // sensitiveVarNames returns every session.vars key that should render
 // masked: a captured variable's name matches a name its capturing step ever
@@ -25,49 +23,23 @@ function sensitiveVarNames(doc) {
   return names;
 }
 
-function renderVarsPanel(vars) {
-  varsPanelEl.innerHTML = "";
+// renderVarsPanel shows vars as chips, masking those doc declares sensitive;
+// with no vars the panel is hidden.
+export function renderVarsPanel(vars, doc) {
   const entries = Object.entries(vars || {});
-  if (!entries.length) {
-    varsPanelEl.hidden = true;
-    return;
-  }
-  varsPanelEl.hidden = false;
-
-  const masked = sensitiveVarNames(lastDoc);
-  for (const [name, value] of entries) {
-    varsPanelEl.appendChild(renderVarChip(name, value, masked.has(name)));
-  }
+  varsPanelEl.hidden = !entries.length;
+  const masked = sensitiveVarNames(doc);
+  varsPanelEl.replaceChildren(...entries.map(([name, value]) => renderVarChip(name, value, masked.has(name))));
 }
 
 function renderVarChip(name, value, isMasked) {
-  const chip = document.createElement("span");
-  chip.className = "var-chip";
-
-  const nameEl = document.createElement("span");
-  nameEl.className = "var-chip-name";
-  nameEl.textContent = `${name}=`;
-  chip.appendChild(nameEl);
-
-  const valueEl = document.createElement("span");
-  valueEl.className = "var-chip-value";
-  valueEl.textContent = isMasked ? "••••••" : value;
-  chip.appendChild(valueEl);
-
-  if (isMasked) {
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "reveal-toggle";
-    toggle.title = "Reveal value";
-    toggle.textContent = "👁";
-    toggle.addEventListener("click", () => {
-      const revealed = valueEl.textContent !== "••••••";
-      valueEl.textContent = revealed ? "••••••" : value;
-    });
-    chip.appendChild(toggle);
-  }
-
-  return chip;
+  const valueEl = h("span", { className: "var-chip-value" }, isMasked ? MASK : value);
+  return h("span", { className: "var-chip" },
+    h("span", { className: "var-chip-name" }, `${name}=`),
+    valueEl,
+    isMasked && revealToggle(() => {
+      valueEl.textContent = valueEl.textContent === MASK ? value : MASK;
+    }));
 }
 
 function findLastRun(history, stepName) {
@@ -87,31 +59,18 @@ function formatLastRun(entry) {
 // showing a step's most recent session.history entry, satisfying
 // Requirement 2.2/2.4: rebuilt from server data, not accumulated in-memory
 // state, so it survives a reload or a POST /api/open switch.
-function renderLastRun(stepName, history, el) {
+export function renderLastRun(stepName, history, el) {
   const entry = findLastRun(history, stepName);
-  const row = el || document.createElement("div");
-  row.className = "step-last-run";
-  row.innerHTML = "";
+  const row = el || h("div", { className: "step-last-run" });
+  row.replaceChildren();
   row.hidden = !entry;
   if (!entry) return row;
 
-  const text = document.createElement("span");
-  text.textContent = formatLastRun(entry);
-  row.appendChild(text);
-
+  row.append(h("span", {}, formatLastRun(entry)));
   if (entry.log_path) {
-    const viewBtn = document.createElement("button");
-    viewBtn.type = "button";
-    viewBtn.className = "btn btn-ghost btn-sm";
-    viewBtn.textContent = "View log";
-    const logView = document.createElement("pre");
-    logView.className = "log-view";
-    logView.hidden = true;
-    viewBtn.addEventListener("click", () => void toggleLogView(entry.log_path, logView));
-    row.appendChild(viewBtn);
-    row.appendChild(logView);
+    const logView = h("pre", { className: "log-view", hidden: true });
+    row.append(button({ label: "View log", onClick: () => void toggleLogView(entry.log_path, logView) }), logView);
   }
-
   return row;
 }
 
@@ -125,7 +84,7 @@ async function toggleLogView(logPath, logView) {
   logView.hidden = false;
 }
 
-function updateStepLastRun(card, history) {
+export function updateStepLastRun(card, history) {
   const existing = card.querySelector(".step-last-run");
   if (!existing) return;
   renderLastRun(card.dataset.stepName, history, existing);
