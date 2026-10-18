@@ -68,7 +68,7 @@ func runTunnelDB(_ *cobra.Command, args []string) error {
 	if localPort == 0 {
 		localPort = target.Port
 	}
-	opts, err := tunnelOptions(cfg.Tunnel, localPort)
+	opts, err := tunnelOptions(cfg.Tunnel, tunnelNamespace, localPort)
 	if err != nil {
 		return err
 	}

@@ -32,7 +32,7 @@ func newFakeCluster() *fakeCluster {
 	return &fakeCluster{started: make(chan tunnel.Request, 10), stopped: make(chan struct{}, 10)}
 }
 
-func (f *fakeCluster) start(ctx context.Context, req tunnel.Request, target tunnel.Target, out io.Writer, ready func(string)) error {
+func (f *fakeCluster) start(ctx context.Context, req tunnel.Request, _ tunnel.Target, out io.Writer, ready func(string)) error {
 	f.started <- req
 	defer func() { f.stopped <- struct{}{} }()
 	_, _ = fmt.Fprintf(out, "✓ Tunnel pod synacklab-tunnel-x ready (namespace %s)\n", req.Namespace)
@@ -272,5 +272,29 @@ func TestServer_WaitBlocksUntilTheTunnelHasCleanedUp(t *testing.T) {
 	case <-cluster.stopped:
 	default:
 		t.Fatal("Wait returned before the tunnel finished")
+	}
+}
+
+func TestServer_PageUsesTheKitAndRealEndpoints(t *testing.T) {
+	ts, _, _ := startTunnelServer(t, newFakeCluster())
+	get := func(path string) string {
+		resp, err := http.Get(ts.URL + path)
+		require.NoError(t, err)
+		defer func() { _ = resp.Body.Close() }()
+		require.Equal(t, http.StatusOK, resp.StatusCode, path)
+		body, _ := io.ReadAll(resp.Body)
+		return string(body)
+	}
+
+	html := get("/")
+	assert.Contains(t, html, `href="/ui/tokens.css"`)
+	assert.Contains(t, html, `href="/ui/components.css"`)
+	assert.Contains(t, html, `<script type="module" src="app.js">`)
+	get("/app.css")
+	get("/ui/components.js")
+	js := get("/app.js")
+	assert.Contains(t, js, `from "/ui/components.js"`)
+	for _, endpoint := range []string{"/api/config", "/api/tunnels", "/ws/tunnels/"} {
+		assert.Contains(t, js, endpoint)
 	}
 }

@@ -19,11 +19,11 @@ it:
 ```go
 // pkg/tunnel/server.go
 type Request struct {
-    Name      string `json:"name"`      // configured database, or
-    Host      string `json:"host"`      // ad hoc target
+    Name      string `json:"name"`       // configured database, or
+    Host      string `json:"host"`       // ad hoc target
     Engine    string `json:"engine"`
     Port      int    `json:"port"`
-    LocalPort int    `json:"localPort"` // 0 = database port
+    LocalPort int    `json:"local_port"` // 0 = database port
     Context   string `json:"context"`
     Namespace string `json:"namespace"`
 }
@@ -33,25 +33,30 @@ type ServerConfig struct {
     DatabaseErr string     // validation error shown instead of the list
     Contexts    []string
     Defaults    Request    // context, namespace preselected
-    // Start resolves req like `tunnel db` and runs tunnel.Open until ctx ends.
-    // out receives the CLI's stdout+stderr text; ready is Options.Ready.
-    Start func(ctx context.Context, req Request, out io.Writer, ready func(Status)) error
+    // Resolve validates and resolves req exactly like `tunnel db` (sync → 400).
+    Resolve func(req Request) (Target, error)
+    // Start runs tunnel.Open until ctx ends. out receives the CLI's
+    // stdout+stderr text; ready is Options.Ready.
+    Start func(ctx context.Context, req Request, target Target, out io.Writer, ready func(pod string)) error
 }
 ```
 
-`internal/cmd` implements `Start` from `resolveDBTarget` (name or
-host/engine/port branch; the picker func is never reached because the UI always
-sends a name or a host), `tunnelOptions` (refactored to take namespace instead
-of reading the package-level flag), `tunnel.NewClient(req.Context)`, and
-`tunnel.Open`. One code path, so CLI and UI cannot drift.
+JSON field names are snake_case, matching the runbook API.
+
+`internal/cmd` implements `Resolve` with `resolveDBTarget` (name or
+host/engine/port branch; a request with neither is rejected with "choose a
+configured database or enter a host", so the picker is never reached) and
+`Start` with `tunnelOptions` (refactored to take namespace instead of reading
+the package-level flag), `tunnel.NewClient(req.Context)`, and `tunnel.Open`. One code path, so CLI and UI cannot drift.
 
 ## API
 
 All JSON. Routes mount the kit at `/ui/` and app assets at `/`.
 
 ```
-GET    /api/config           {databases, databaseError, contexts, engines, defaults}
-GET    /api/tunnels          [{id, state, request, pod, localAddr, hint, error}]  (0 or 1 item in v1)
+GET    /api/config           {databases, database_error, contexts, engines, defaults}
+GET    /api/tunnels          [{id, state, pod, namespace, context, target, local_addr, hint, error}]
+                             (0 or 1 item in v1)
 POST   /api/tunnels          Request → 201 {id} | 400 {error} | 409 {error}
 DELETE /api/tunnels/{id}     cancel; 202, state → closing → closed
 GET    /ws/tunnels/{id}      replays output so far, then streams

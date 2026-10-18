@@ -28,7 +28,8 @@ It works with any Kubernetes cluster your kubeconfig can reach. Cluster
 setup (namespace, RBAC, networking) is described in docs/tunnel.md.
 
 Available commands:
-  db - Tunnel to a MySQL or PostgreSQL database`,
+  db    - Tunnel to a MySQL or PostgreSQL database
+  serve - Open tunnels from a local web page`,
 }
 
 func init() {
@@ -38,14 +39,15 @@ func init() {
 }
 
 // tunnelOptions builds pod options shared by every tunnel subcommand.
-// Namespace precedence: --namespace, then tunnel.namespace, then the default.
-func tunnelOptions(cfg config.TunnelConfig, localPort int) (tunnel.Options, error) {
+// Namespace precedence: namespace (--namespace or the page's choice), then
+// tunnel.namespace, then the default.
+func tunnelOptions(cfg config.TunnelConfig, namespace string, localPort int) (tunnel.Options, error) {
 	maxDuration, err := cfg.ParseMaxDuration()
 	if err != nil {
 		return tunnel.Options{}, err
 	}
 	opts := tunnel.Options{
-		Namespace:    cmp.Or(tunnelNamespace, cfg.Namespace, tunnel.DefaultNamespace),
+		Namespace:    cmp.Or(namespace, cfg.Namespace, tunnel.DefaultNamespace),
 		Image:        cmp.Or(cfg.Image, tunnel.DefaultImage),
 		MaxDuration:  maxDuration,
 		NodeSelector: cfg.NodeSelector,

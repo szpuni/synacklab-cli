@@ -52,6 +52,27 @@ tunnel:
     - {name: billing,     engine: mysql,    host: 10.20.3.15, port: 3307}
 ```
 
+### From a web page: `tunnel serve`
+
+```bash
+synacklab tunnel serve                   # http://127.0.0.1:4748
+synacklab tunnel serve --context prod -n tunnels --port 4800
+```
+
+The page offers the same choices as `tunnel db`: a configured database or an
+ad hoc host, engine and port, the local port, kube context and namespace.
+It applies the same validation, shows the tunnel's status, how to connect and
+the pod's output, and closes the tunnel (deleting the pod) with **Close
+tunnel**. One tunnel runs at a time.
+
+- The tunnel keeps running if you close the browser tab; reopen the page to
+  see it, or stop `serve` with Ctrl-C, which deletes the pod before exiting.
+- The page is local-only: `--bind` accepts only loopback addresses, and the
+  server rejects requests addressed to another host name or sent from another
+  website.
+- If `tunnel.databases` is invalid, the page shows the error and still opens
+  ad hoc hosts.
+
 ## The tunnel pod
 
 Each tunnel is one pod, deleted on exit:

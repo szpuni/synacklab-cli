@@ -34,6 +34,8 @@ internal/cmd/                thin Cobra command wrappers
   github_apply.go github_validate.go, github.go
   tunnel.go, tunnel_db.go     `tunnel` parent (shared --context/--namespace, tunnelOptions)
                               and `tunnel db` (target from name | --host/--engine | picker)
+  tunnel_serve.go             `tunnel serve`: wires tunnel.Server to resolveDBTarget/tunnelOptions
+                              so the page and CLI share one set of rules
 
 internal/auth/                AWS SSO device-authorization flow
   manager.go   DefaultManager implements Manager (Authenticate, IsAuthenticated,
@@ -70,6 +72,9 @@ pkg/tunnel/                   TCP tunnels via a socat pod + kube port-forward (s
   kube.go      NewClient: standard kubeconfig loading (exec plugins, --context)
   validate.go  ValidateHost/Port, SanitizeUser
   engine.go    engines table: default port + client hint per engine (mysql/postgres)
+  server.go    tunnel serve API (config, tunnels, WS stream); Resolve/Start injected
+               by internal/cmd; maxActive = 1. server_run.go: per-tunnel state/output
+  web/         tunnel page, built from the pkg/webui kit
 
 pkg/webui/                    shared kit for local `serve` UIs (spec: docs/specs/web-ui-kit/)
   webui.go     Serve (graceful shutdown, request logging, local-only guard),

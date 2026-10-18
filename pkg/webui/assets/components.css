@@ -214,6 +214,7 @@
 .card-badges { display: flex; gap: 6px; }
 
 .card-actions { display: flex; align-items: center; gap: 10px; }
+.card-footer { margin-top: 14px; }
 
 /* ── Log view (streamed output) ──────────────────────────────────────── */
 .output {
