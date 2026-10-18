@@ -53,3 +53,11 @@ func SanitizeUser(name string) string {
 	}
 	return s
 }
+
+// Validate checks the target before it is used in socat's arguments.
+func (t Target) Validate() error {
+	if err := ValidateHost(t.Host); err != nil {
+		return err
+	}
+	return ValidatePort(t.Port)
+}

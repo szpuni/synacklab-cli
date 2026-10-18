@@ -1,13 +1,15 @@
 package tunnel
 
 import (
+	"bytes"
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
@@ -18,6 +20,10 @@ import (
 // PortForwarder returns the real Forwarder: the Kubernetes pods/portforward
 // API over WebSockets, falling back to SPDY like kubectl. It listens on
 // 127.0.0.1 only and writes per-connection errors to errOut.
+//
+// RBAC checks the WebSocket upgrade as `get` and SPDY as `create`, so a denied
+// WebSocket upgrade still falls back. The outcome is SPDY's: only its denial
+// is reported as Forbidden.
 func PortForwarder(config *rest.Config, client corev1client.CoreV1Interface, errOut io.Writer) Forwarder {
 	return func(ctx context.Context, namespace, pod string, localPort, podPort int, ready chan struct{}) error {
 		url := client.RESTClient().Post().
@@ -27,20 +33,13 @@ func PortForwarder(config *rest.Config, client corev1client.CoreV1Interface, err
 		if err != nil {
 			return fmt.Errorf("failed to build port-forward transport: %w", err)
 		}
-		dialer := spdy.NewDialerForStreaming(upgrader, &http.Client{Transport: transport}, http.MethodPost, url)
+		spdyTransport := &deniedTransport{RoundTripper: transport}
+		dialer := spdy.NewDialerForStreaming(upgrader, &http.Client{Transport: spdyTransport}, http.MethodPost, url)
 		websocketDialer, err := portforward.NewSPDYOverWebsocketDialerForStreaming(url, config)
 		if err != nil {
 			return fmt.Errorf("failed to build port-forward dialer: %w", err)
 		}
-		// Keep a denied WebSocket upgrade's Forbidden status: client-go reports
-		// SPDY failures as plain text. RBAC checks WebSocket as `get` and SPDY
-		// as `create` on pods/portforward, so the SPDY fallback may still work.
-		var denied error
 		dialer = portforward.NewFallbackDialerForStreaming(websocketDialer, dialer, func(err error) bool {
-			var upgradeErr *httpstream.UpgradeFailureError
-			if errors.As(err, &upgradeErr) && apierrors.IsForbidden(upgradeErr.Cause) {
-				denied = upgradeErr.Cause
-			}
 			return httpstream.IsUpgradeFailure(err) || httpstream.IsHTTPSProxyError(err)
 		})
 
@@ -49,15 +48,31 @@ func PortForwarder(config *rest.Config, client corev1client.CoreV1Interface, err
 		if err != nil {
 			return fmt.Errorf("failed to set up port-forward: %w", err)
 		}
-		err = fw.ForwardPorts()
-		select {
-		case <-ready: // connected, so any denial was overcome by the fallback
+		if err := fw.ForwardPorts(); spdyTransport.denied == nil {
 			return err
-		default:
 		}
-		if err != nil && denied != nil {
-			return fmt.Errorf("%w (SPDY fallback: %v)", denied, err)
-		}
-		return err
+		return spdyTransport.denied
 	}
+}
+
+// deniedTransport records a Forbidden SPDY upgrade response as a StatusError:
+// client-go reports upgrade failures as plain text, losing the status.
+type deniedTransport struct {
+	http.RoundTripper
+	denied error
+}
+
+func (t *deniedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.RoundTripper.RoundTrip(req)
+	if err != nil || resp.StatusCode != http.StatusForbidden {
+		return resp, err
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	var status metav1.Status
+	if err == nil && json.Unmarshal(body, &status) == nil && status.Reason == metav1.StatusReasonForbidden {
+		t.denied = &apierrors.StatusError{ErrStatus: status}
+	}
+	return resp, nil
 }

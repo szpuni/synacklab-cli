@@ -95,7 +95,7 @@ func resolveDBTarget(cfg config.TunnelConfig, args []string, flags dbTargetFlags
 		if flags.engine == "" {
 			return tunnel.Target{}, errors.New("--host requires --engine (mysql or postgres)")
 		}
-		return dbTarget(config.TunnelDatabase{Engine: flags.engine, Host: flags.host, Port: flags.port})
+		return config.TunnelDatabase{Engine: flags.engine, Host: flags.host, Port: flags.port}.Target()
 	}
 	if flags.engine != "" || flags.port != 0 {
 		return tunnel.Target{}, errors.New("--engine and --port describe an ad hoc target and require --host")
@@ -121,30 +121,17 @@ func resolveDBTarget(cfg config.TunnelConfig, args []string, flags dbTargetFlags
 	var names []string
 	for _, db := range cfg.Databases {
 		if db.Name == name {
-			return dbTarget(db)
+			return db.Target()
 		}
 		names = append(names, db.Name)
 	}
 	return tunnel.Target{}, fmt.Errorf("unknown database %q; configured databases: %s", name, strings.Join(names, ", "))
 }
 
-// dbTarget converts a database entry to a tunnel target, applying the engine's default port.
-func dbTarget(db config.TunnelDatabase) (tunnel.Target, error) {
-	defaultPort, err := tunnel.DefaultPort(db.Engine)
-	if err != nil {
-		return tunnel.Target{}, err
-	}
-	port := db.Port
-	if port == 0 {
-		port = defaultPort
-	}
-	return tunnel.Target{Kind: db.Engine, Host: db.Host, Port: port}, nil
-}
-
 func pickDatabase(dbs []config.TunnelDatabase) (string, error) {
 	finder := fuzzy.New("Select database")
 	for _, db := range dbs {
-		target, _ := dbTarget(db) // entries passed ValidateTunnel
+		target, _ := db.Target() // entries passed ValidateDatabases
 		finder.AddOption(db.Name, db.Engine+" "+net.JoinHostPort(target.Host, strconv.Itoa(target.Port)))
 	}
 	return finder.Select()

@@ -10,6 +10,7 @@ aws:
 # Every field is optional.
 tunnel:
   namespace: synacklab-tunnels   # where tunnel pods run
+  # image: registry.corp/mirror/socat:1.8.1.1@sha256:...  # default: alpine/socat pinned by digest; any image whose entrypoint is socat
   max_duration: 8h               # Kubernetes kills the pod after this (whole seconds)
   node_selector:                 # run on nodes the database accepts traffic from
     subnet: app

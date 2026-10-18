@@ -40,14 +40,14 @@ func init() {
 // tunnelOptions builds pod options shared by every tunnel subcommand.
 // Namespace precedence: --namespace, then tunnel.namespace, then the default.
 func tunnelOptions(cfg config.TunnelConfig, localPort int) (tunnel.Options, error) {
-	lifetime, err := cfg.Lifetime()
+	maxDuration, err := cfg.ParseMaxDuration()
 	if err != nil {
 		return tunnel.Options{}, err
 	}
 	opts := tunnel.Options{
 		Namespace:    cmp.Or(tunnelNamespace, cfg.Namespace, tunnel.DefaultNamespace),
 		Image:        cmp.Or(cfg.Image, tunnel.DefaultImage),
-		MaxDuration:  lifetime,
+		MaxDuration:  maxDuration,
 		NodeSelector: cfg.NodeSelector,
 		LocalPort:    localPort,
 		Out:          os.Stdout,

@@ -76,21 +76,21 @@ func TestValidateDatabases_NamesTheInvalidEntry(t *testing.T) {
 	}
 }
 
-func TestTunnelLifetime_DefaultsToEightHours(t *testing.T) {
-	got, err := TunnelConfig{}.Lifetime()
+func TestTunnelMaxDuration_DefaultsToEightHours(t *testing.T) {
+	got, err := TunnelConfig{}.ParseMaxDuration()
 	require.NoError(t, err)
 	assert.Equal(t, 8*time.Hour, got)
 
-	got, err = TunnelConfig{MaxDuration: "90m"}.Lifetime()
+	got, err = TunnelConfig{MaxDuration: "90m"}.ParseMaxDuration()
 	require.NoError(t, err)
 	assert.Equal(t, 90*time.Minute, got)
 }
 
-func TestTunnelLifetime_RejectsWhatThePodDeadlineCannotExpress(t *testing.T) {
+func TestTunnelMaxDuration_RejectsWhatThePodDeadlineCannotExpress(t *testing.T) {
 	// activeDeadlineSeconds is a whole, positive number of seconds.
 	for _, value := range []string{"forever", "0s", "-1h", "500ms", "90.5s"} {
 		t.Run(value, func(t *testing.T) {
-			_, err := TunnelConfig{MaxDuration: value}.Lifetime()
+			_, err := TunnelConfig{MaxDuration: value}.ParseMaxDuration()
 			assert.ErrorContains(t, err, "tunnel.max_duration")
 		})
 	}

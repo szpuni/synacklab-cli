@@ -223,3 +223,26 @@ func TestOpen_RetriesWithAnotherNameWhenThePodNameIsTaken(t *testing.T) {
 	require.NoError(t, tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions()))
 	assert.Len(t, calls, 1)
 }
+
+func TestOpen_CtrlCWhileCreatingThePodStillRemovesIt(t *testing.T) {
+	fastRetries(t)
+	client := clusterWhere(runningAndReady)
+	ctx, cancel := context.WithCancel(t.Context())
+
+	// The API server stores the pod, but the user cancelled before the
+	// response arrived, so the client only sees the cancellation.
+	client.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		cancel()
+		pod := action.(k8stesting.CreateAction).GetObject()
+		require.NoError(t, client.Tracker().Create(corev1.SchemeGroupVersion.WithResource("pods"), pod, "tunnels"))
+		return true, nil, context.Canceled
+	})
+	var calls []forwardCall
+
+	require.NoError(t, tunnel.Open(ctx, client.CoreV1(), closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions()))
+	assert.Empty(t, calls)
+
+	pods, err := client.CoreV1().Pods("tunnels").List(t.Context(), metav1.ListOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, pods.Items)
+}

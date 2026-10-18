@@ -66,27 +66,29 @@ var (
 // blocks until ctx is cancelled (returning nil) or the tunnel fails, and
 // always deletes the pod it created.
 func Open(ctx context.Context, client corev1client.CoreV1Interface, forward Forwarder, target Target, opts Options) error {
-	return withRBACHint(open(ctx, client, forward, target, opts), opts.Namespace)
+	return withRBACHint(run(ctx, client.Pods(opts.Namespace), forward, target, opts), opts.Namespace)
 }
 
-func open(ctx context.Context, client corev1client.CoreV1Interface, forward Forwarder, target Target, opts Options) error {
-	if err := ValidateHost(target.Host); err != nil {
-		return err
-	}
-	if err := ValidatePort(target.Port); err != nil {
+func run(ctx context.Context, pods corev1client.PodInterface, forward Forwarder, target Target, opts Options) error {
+	if err := target.Validate(); err != nil {
 		return err
 	}
 	if err := checkLocalPortFree(opts.LocalPort); err != nil {
 		return err
 	}
 
-	pod, err := createPod(ctx, client, target, opts)
+	pod, err := createPod(ctx, pods, target, opts)
 	if err != nil {
+		if ctx.Err() != nil && !apierrors.IsAlreadyExists(err) {
+			// Cancelled mid-request: the API server may have created the pod anyway.
+			deletePod(pods, pod.Name, opts)
+			return nil
+		}
 		return fmt.Errorf("failed to create tunnel pod in namespace %q: %w", opts.Namespace, err)
 	}
-	defer deletePod(client, pod.Name, opts)
+	defer deletePod(pods, pod.Name, opts)
 
-	if err := waitReady(ctx, client, opts.Namespace, pod.Name); err != nil {
+	if err := waitReady(ctx, pods, pod.Name); err != nil {
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -97,7 +99,7 @@ func open(ctx context.Context, client corev1client.CoreV1Interface, forward Forw
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	defer stop()
-	wg.Go(func() { streamLogs(runCtx, client, pod.Name, opts) })
+	wg.Go(func() { streamLogs(runCtx, pods, pod.Name, opts) })
 
 	connected := false
 	for attempt := 0; ; attempt++ {
@@ -119,7 +121,7 @@ func open(ctx context.Context, client corev1client.CoreV1Interface, forward Forw
 		}
 
 		forwardCtx, stopForward := context.WithCancel(ctx)
-		wg.Go(func() { stopWhenPodStops(forwardCtx, stopForward, client, opts.Namespace, pod.Name) })
+		wg.Go(func() { stopWhenPodStops(forwardCtx, stopForward, pods, pod.Name) })
 		err := forward(forwardCtx, opts.Namespace, pod.Name, opts.LocalPort, podPort, ready)
 		stopForward()
 		if ctx.Err() != nil {
@@ -135,7 +137,7 @@ func open(ctx context.Context, client corev1client.CoreV1Interface, forward Forw
 			return fmt.Errorf("port-forward to tunnel pod %s failed: %w", pod.Name, err)
 		}
 
-		current, getErr := getPodRetrying(ctx, client, opts.Namespace, pod.Name)
+		current, getErr := getPodRetrying(ctx, pods, pod.Name)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -158,10 +160,15 @@ func open(ctx context.Context, client corev1client.CoreV1Interface, forward Forw
 	}
 }
 
-// createPod retries with a new random name suffix if the name is taken.
-func createPod(ctx context.Context, client corev1client.CoreV1Interface, target Target, opts Options) (*corev1.Pod, error) {
+// createPod retries with a new random name suffix if the name is taken. On
+// error it returns the pod it last tried to create.
+func createPod(ctx context.Context, pods corev1client.PodInterface, target Target, opts Options) (*corev1.Pod, error) {
 	for attempt := 1; ; attempt++ {
-		pod, err := client.Pods(opts.Namespace).Create(ctx, buildPod(target, opts, SanitizeUser(opts.User)), metav1.CreateOptions{})
+		pod := buildPod(target, opts, SanitizeUser(opts.User))
+		created, err := pods.Create(ctx, pod, metav1.CreateOptions{})
+		if err == nil {
+			return created, nil
+		}
 		if !apierrors.IsAlreadyExists(err) || attempt == 3 {
 			return pod, err
 		}
@@ -191,8 +198,8 @@ func printConnected(podName string, target Target, opts Options) {
 
 // streamLogs copies socat's output (e.g. refused upstream connections) to
 // opts.Err until ctx is done.
-func streamLogs(ctx context.Context, client corev1client.CoreV1Interface, podName string, opts Options) {
-	logs, err := client.Pods(opts.Namespace).GetLogs(podName, &corev1.PodLogOptions{Follow: true}).Stream(ctx)
+func streamLogs(ctx context.Context, pods corev1client.PodInterface, podName string, opts Options) {
+	logs, err := pods.GetLogs(podName, &corev1.PodLogOptions{Follow: true}).Stream(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
 			_, _ = fmt.Fprintf(opts.Err, "⚠️  Could not stream tunnel pod logs: %v\n", withRBACHint(err, opts.Namespace))
@@ -206,9 +213,9 @@ func streamLogs(ctx context.Context, client corev1client.CoreV1Interface, podNam
 // stopWhenPodStops calls stop once the pod leaves the Running phase (e.g.
 // killed at max_duration) or is deleted. Other lookup errors are ignored;
 // the next check retries.
-func stopWhenPodStops(ctx context.Context, stop context.CancelFunc, client corev1client.CoreV1Interface, namespace, name string) {
+func stopWhenPodStops(ctx context.Context, stop context.CancelFunc, pods corev1client.PodInterface, name string) {
 	_ = wait.PollUntilContextCancel(ctx, podWatchInterval, false, func(ctx context.Context) (bool, error) {
-		pod, err := client.Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+		pod, err := pods.Get(ctx, name, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
 			return true, nil
 		}
@@ -220,11 +227,11 @@ func stopWhenPodStops(ctx context.Context, stop context.CancelFunc, client corev
 // getPodRetrying retries the lookup through transient API errors, such as
 // the brief Forbidden responses of an API server whose RBAC cache is warming up.
 // NotFound is final: the pod was deleted.
-func getPodRetrying(ctx context.Context, client corev1client.CoreV1Interface, namespace, name string) (*corev1.Pod, error) {
+func getPodRetrying(ctx context.Context, pods corev1client.PodInterface, name string) (*corev1.Pod, error) {
 	var pod *corev1.Pod
 	var lastErr error
 	err := wait.PollUntilContextTimeout(ctx, retryInterval, podCheckTimeout, true, func(ctx context.Context) (bool, error) {
-		pod, lastErr = client.Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+		pod, lastErr = pods.Get(ctx, name, metav1.GetOptions{})
 		if apierrors.IsNotFound(lastErr) {
 			return false, lastErr
 		}
@@ -238,12 +245,12 @@ func getPodRetrying(ctx context.Context, client corev1client.CoreV1Interface, na
 
 // deletePod uses its own context: by teardown the command's context is
 // usually already cancelled. It retries through transient API errors.
-func deletePod(client corev1client.CoreV1Interface, name string, opts Options) {
+func deletePod(pods corev1client.PodInterface, name string, opts Options) {
 	ctx, cancel := context.WithTimeout(context.Background(), deleteTimeout)
 	defer cancel()
 	var err error
 	_ = wait.PollUntilContextCancel(ctx, retryInterval, true, func(ctx context.Context) (bool, error) {
-		err = client.Pods(opts.Namespace).Delete(ctx, name, metav1.DeleteOptions{})
+		err = pods.Delete(ctx, name, metav1.DeleteOptions{})
 		if apierrors.IsNotFound(err) {
 			err = nil
 		}

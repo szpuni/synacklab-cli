@@ -164,28 +164,33 @@ func (t TunnelConfig) ValidateDatabases() error {
 			return fmt.Errorf("tunnel.databases: duplicate database name %q", db.Name)
 		}
 		seen[db.Name] = true
-		if err := validateDatabase(db); err != nil {
+		if _, err := db.Target(); err != nil {
 			return fmt.Errorf("tunnel.databases: database %q: %w", db.Name, err)
 		}
 	}
 	return nil
 }
 
-func validateDatabase(db TunnelDatabase) error {
-	if _, err := tunnel.DefaultPort(db.Engine); err != nil {
-		return err
-	}
-	if err := tunnel.ValidateHost(db.Host); err != nil {
-		return err
+// Target returns the tunnel target for this database, with the engine's
+// default port when Port is 0. It is the one definition of a valid target.
+func (db TunnelDatabase) Target() (tunnel.Target, error) {
+	port, err := tunnel.DefaultPort(db.Engine)
+	if err != nil {
+		return tunnel.Target{}, err
 	}
 	if db.Port != 0 {
-		return tunnel.ValidatePort(db.Port)
+		port = db.Port
 	}
-	return nil
+	target := tunnel.Target{Kind: db.Engine, Host: db.Host, Port: port}
+	if err := target.Validate(); err != nil {
+		return tunnel.Target{}, err
+	}
+	return target, nil
 }
 
-// Lifetime returns the parsed tunnel.max_duration, or tunnel.DefaultMaxDuration if unset.
-func (t TunnelConfig) Lifetime() (time.Duration, error) {
+// ParseMaxDuration returns tunnel.max_duration parsed, or
+// tunnel.DefaultMaxDuration if unset.
+func (t TunnelConfig) ParseMaxDuration() (time.Duration, error) {
 	if t.MaxDuration == "" {
 		return tunnel.DefaultMaxDuration, nil
 	}
