@@ -64,13 +64,13 @@
   - Verify: `go test -race ./pkg/tunnel`
   - _Requirements: 4.4, 5.1, 5.2, 5.4, 5.5, 5.6, 5.7, 6.1, 6.2, 6.3_
 
-- [ ] 6. `tunnel db` command with real kube client and SPDY forwarder (TDD for resolution)
+- [x] 6. `tunnel db` command with real kube client and port forwarder (TDD for resolution)
   - Write `internal/cmd/tunnel_db_test.go` first: named target, ad hoc
     `--host/--engine` (+ default port), name and `--host` together → error,
     `--host` without `--engine` → error, unknown name lists names, empty config
     with no flags → guidance error
   - Implement `pkg/tunnel/kube.go` (`NewClient`), `pkg/tunnel/forward.go`
-    (`SPDYForwarder`, loopback only), `internal/cmd/tunnel.go`,
+    (`PortForwarder`: WebSocket with SPDY fallback, loopback only), `internal/cmd/tunnel.go`,
     `internal/cmd/tunnel_db.go` (fuzzy picker, namespace precedence,
     `signal.NotifyContext`, Forbidden hint); register in `root.go`
   - Verify: `go test ./...`; manual against a dev cluster — open a tunnel to a
@@ -78,7 +78,18 @@
     connection (or sleep the laptop) and see reconnect, Ctrl-C and confirm the
     pod is gone (`kubectl get pods -n synacklab-tunnels`), set
     `max_duration: 1m` and confirm Kubernetes kills the pod
-  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.6, 1.7, 2.4, 4.5, 5.3, 6.4, 7.1, 7.2, 7.3, 7.4_
+  - Verified against a throwaway kind cluster (own kubeconfig; postgres:16 and
+    mysql:8.4 in-cluster): psql handshake and `mysql -e "select version()"`
+    through the tunnel, loopback-only listener, Ctrl-C → exit 0 + pod gone,
+    picker via stdin fallback, refused and dropped upstream connections
+    reported from socat logs, API server restart mid-tunnel → reconnect,
+    `max_duration: 1m` → exit 1 with `DeadlineExceeded` after 63s
+  - Fixes from that run (each test-first): removed the readiness probe (it
+    made socat dial MySQL every 2s → `Broken pipe` noise), added socat
+    `connect-timeout=10`, retried pod lookup/delete through transient API
+    errors, polled pod phase while forwarding (idle tunnels hung on a dead
+    pod), `SilenceUsage` on `tunnel db`
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.6, 1.7, 2.4, 4.5, 5.3, 6.4, 7.1, 7.2, 7.3, 7.4_, 5.7, 5.8, 6.2
 
 - [ ] 7. Documentation
   - Write `docs/tunnel.md`: Namespace + Role + RoleBinding manifests, optional

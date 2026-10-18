@@ -7,7 +7,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 )
 
@@ -18,8 +17,11 @@ const podPort = 8080
 // nobody is the UID socat runs as; the default image would otherwise run as root.
 const nobody = 65534
 
-// buildPod returns the tunnel pod for target. The name is chosen here rather
-// than via generateName so callers know it before the create call returns.
+// buildPod returns the tunnel pod for target. It has no probes: each probe
+// connection would make socat open a real connection to the target, so a
+// running container is treated as ready (socat listens within milliseconds).
+// The name is chosen here rather than via generateName so callers know it
+// before the create call returns.
 func buildPod(target Target, opts Options, user string) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -46,13 +48,11 @@ func buildPod(target Target, opts Options, user string) *corev1.Pod {
 				Image: opts.Image,
 				Args: []string{
 					"TCP-LISTEN:" + strconv.Itoa(podPort) + ",fork,reuseaddr",
-					"TCP:" + net.JoinHostPort(target.Host, strconv.Itoa(target.Port)),
+					// connect-timeout surfaces silently dropped traffic (e.g. a firewall)
+					// as an error within seconds instead of the OS's ~2 minutes.
+					"TCP:" + net.JoinHostPort(target.Host, strconv.Itoa(target.Port)) + ",connect-timeout=10",
 				},
 				Ports: []corev1.ContainerPort{{ContainerPort: podPort, Protocol: corev1.ProtocolTCP}},
-				ReadinessProbe: &corev1.Probe{
-					ProbeHandler:  corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt(podPort)}},
-					PeriodSeconds: 2,
-				},
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("10m"),

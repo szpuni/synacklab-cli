@@ -12,7 +12,9 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -45,10 +47,20 @@ type Options struct {
 
 // Forwarder forwards 127.0.0.1:localPort to podPort on the named pod until ctx
 // is done or the stream breaks. It closes ready once listening.
-type Forwarder func(ctx context.Context, namespace, pod string, localPort, podPort int, ready chan<- struct{}) error
+type Forwarder func(ctx context.Context, namespace, pod string, localPort, podPort int, ready chan struct{}) error
 
-// reconnectDelay paces re-forwarding after the port-forward stream drops.
-var reconnectDelay = time.Second
+var (
+	// retryInterval paces re-forwarding and retried API calls.
+	retryInterval = time.Second
+	// podCheckTimeout bounds how long a dropped forward waits for the API
+	// server (e.g. restarting) to report the pod's state.
+	podCheckTimeout = time.Minute
+	// deleteTimeout bounds teardown retries.
+	deleteTimeout = 10 * time.Second
+	// podWatchInterval paces checks that the pod is still running while
+	// forwarding; an idle forward does not notice the pod dying by itself.
+	podWatchInterval = 5 * time.Second
+)
 
 // clientHints shows how to connect a client, per target kind; %d is the local port.
 var clientHints = map[string]string{
@@ -107,12 +119,18 @@ func Open(ctx context.Context, client kubernetes.Interface, forward Forwarder, t
 			})
 		}
 
-		err := forward(ctx, opts.Namespace, pod.Name, opts.LocalPort, podPort, ready)
+		forwardCtx, stopForward := context.WithCancel(ctx)
+		wg.Go(func() { stopWhenPodStops(forwardCtx, stopForward, client, opts.Namespace, pod.Name) })
+		err := forward(forwardCtx, opts.Namespace, pod.Name, opts.LocalPort, podPort, ready)
+		stopForward()
 		if ctx.Err() != nil {
 			return nil
 		}
 
-		current, getErr := client.CoreV1().Pods(opts.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+		current, getErr := getPodRetrying(ctx, client, opts.Namespace, pod.Name)
+		if ctx.Err() != nil {
+			return nil
+		}
 		if getErr != nil {
 			return fmt.Errorf("port-forward to tunnel pod %s ended (%v) and the pod could not be checked: %w", pod.Name, err, getErr)
 		}
@@ -122,7 +140,7 @@ func Open(ctx context.Context, client kubernetes.Interface, forward Forwarder, t
 		_, _ = fmt.Fprintf(opts.Err, "⚠️  Connection to tunnel pod lost (%v); reconnecting...\n", err)
 
 		select {
-		case <-time.After(reconnectDelay):
+		case <-time.After(retryInterval):
 		case <-ctx.Done():
 			return nil
 		}
@@ -164,12 +182,45 @@ func streamLogs(ctx context.Context, client kubernetes.Interface, podName string
 	_, _ = io.Copy(opts.Err, logs)
 }
 
+// stopWhenPodStops calls stop once the pod leaves the Running phase (e.g.
+// killed at max_duration). Lookup errors are ignored; the next check retries.
+func stopWhenPodStops(ctx context.Context, stop context.CancelFunc, client kubernetes.Interface, namespace, name string) {
+	_ = wait.PollUntilContextCancel(ctx, podWatchInterval, false, func(ctx context.Context) (bool, error) {
+		pod, err := client.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+		return err == nil && pod.Status.Phase != corev1.PodRunning, nil
+	})
+	stop()
+}
+
+// getPodRetrying retries the lookup through transient API errors, such as
+// the brief Forbidden responses of an API server whose RBAC cache is warming up.
+func getPodRetrying(ctx context.Context, client kubernetes.Interface, namespace, name string) (*corev1.Pod, error) {
+	var pod *corev1.Pod
+	var lastErr error
+	err := wait.PollUntilContextTimeout(ctx, retryInterval, podCheckTimeout, true, func(ctx context.Context) (bool, error) {
+		pod, lastErr = client.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+		return lastErr == nil, nil
+	})
+	if err != nil && lastErr != nil {
+		return nil, lastErr
+	}
+	return pod, err
+}
+
 // deletePod uses its own context: by teardown the command's context is
-// usually already cancelled.
+// usually already cancelled. It retries through transient API errors.
 func deletePod(client kubernetes.Interface, name string, opts Options) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), deleteTimeout)
 	defer cancel()
-	if err := client.CoreV1().Pods(opts.Namespace).Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
+	var err error
+	_ = wait.PollUntilContextCancel(ctx, retryInterval, true, func(ctx context.Context) (bool, error) {
+		err = client.CoreV1().Pods(opts.Namespace).Delete(ctx, name, metav1.DeleteOptions{})
+		if apierrors.IsNotFound(err) {
+			err = nil
+		}
+		return err == nil, nil
+	})
+	if err != nil {
 		_, _ = fmt.Fprintf(opts.Err, "⚠️  Failed to delete tunnel pod %s in namespace %s: %v\n"+
 			"   Kubernetes will remove it when max_duration (%s) expires.\n", name, opts.Namespace, err, opts.MaxDuration)
 	}

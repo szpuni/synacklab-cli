@@ -62,10 +62,10 @@ cluster's attack surface.
 
 1. WHEN a tunnel opens THEN the system SHALL create exactly one pod in the resolved namespace with name prefix `synacklab-tunnel-<user>-` (generated suffix), where `<user>` is the local OS username sanitized to a DNS-1123 label fragment.
 2. WHEN the pod is created THEN it SHALL carry labels `app.kubernetes.io/managed-by=synacklab`, `synacklab.io/user=<user>`, and `synacklab.io/target=<engine>`.
-3. WHEN the pod is created THEN its single container SHALL run the configured image with socat arguments passed as an argv list (no shell): listen on TCP port 8080 with `fork,reuseaddr`, connect to `<host>:<port>`.
+3. WHEN the pod is created THEN its single container SHALL run the configured image with socat arguments passed as an argv list (no shell): listen on TCP port 8080 with `fork,reuseaddr`, connect to `<host>:<port>` with a 10-second connect timeout (IPv6 hosts bracketed).
 4. WHEN the pod is created THEN it SHALL set `restartPolicy: Never`, `automountServiceAccountToken: false`, `activeDeadlineSeconds` equal to `max_duration`, and the configured `node_selector`.
 5. WHEN the pod is created THEN its container SHALL run as a non-root UID with `readOnlyRootFilesystem: true`, `allowPrivilegeEscalation: false`, all capabilities dropped, seccomp profile `RuntimeDefault`, and CPU/memory requests and limits set.
-6. WHEN the pod is created THEN it SHALL expose a TCP readiness probe on port 8080.
+6. WHEN the pod is created THEN it SHALL NOT define readiness, liveness, or startup probes, because each probe connection makes socat open a real connection to the target (observed against MySQL: a `Broken pipe` log line every probe period and aborted connections on the server). A Running container is treated as ready.
 
 ### Requirement 4 — Readiness and failure reporting
 
@@ -93,8 +93,9 @@ on my machine, so that I can point `psql`, `mysql`, or a GUI client at it.
 3. WHEN the pod is ready THEN the system SHALL forward `127.0.0.1:<local-port>` to pod port 8080 through the Kubernetes API, and SHALL NOT listen on any non-loopback address.
 4. WHEN forwarding starts THEN the system SHALL print the pod name, namespace, target engine and `host:port`, the local address, an example client command for the engine, and how to stop.
 5. WHILE the tunnel is open THEN the system SHALL stream the pod's log output (socat errors such as refused or timed-out upstream connections) to stderr.
-6. IF the forwarding stream drops while the pod is still Running THEN the system SHALL re-establish forwarding on the same local port and print a notice.
-7. IF the forwarding stream drops and the pod is no longer Running (e.g. `max_duration` reached) THEN the system SHALL report the pod's phase and reason and exit non-zero.
+8. IF a tunnel command fails at runtime THEN the system SHALL print the error without the command's usage text.
+6. IF the forwarding stream drops while the pod is still Running THEN the system SHALL re-establish forwarding on the same local port and print a notice, retrying the pod lookup through transient API errors (e.g. an API server restarting) for up to 1 minute.
+7. IF the pod is no longer Running (e.g. `max_duration` reached) THEN the system SHALL stop forwarding within 5 seconds, even while no connection is open, report the pod's phase and reason, and exit non-zero.
 
 ### Requirement 6 — Teardown
 
@@ -105,7 +106,7 @@ don't accumulate.
 #### Acceptance Criteria
 
 1. WHEN the user presses Ctrl-C or the process receives SIGTERM THEN the system SHALL stop forwarding, delete the pod, and exit zero.
-2. WHEN deleting the pod during teardown THEN the system SHALL use a fresh context with a 10-second timeout, independent of the cancelled command context.
+2. WHEN deleting the pod during teardown THEN the system SHALL use a fresh context with a 10-second timeout, independent of the cancelled command context, retrying through transient API errors within that timeout and treating NotFound as success.
 3. IF pod deletion fails THEN the system SHALL print the pod name, namespace, and the error, and SHALL note that the pod will still be removed when `max_duration` expires.
 4. IF the CLI exits without running teardown (crash, killed, laptop asleep) THEN Kubernetes SHALL terminate the pod no later than `max_duration` after creation via `activeDeadlineSeconds`.
 

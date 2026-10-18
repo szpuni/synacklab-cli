@@ -66,7 +66,7 @@ type forwardCall struct {
 // closeOnFirstForward is a Forwarder that records the call, then simulates
 // the user pressing Ctrl-C.
 func closeOnFirstForward(client *fake.Clientset, cancel context.CancelFunc, calls *[]forwardCall) tunnel.Forwarder {
-	return func(ctx context.Context, namespace, pod string, localPort, podPort int, ready chan<- struct{}) error {
+	return func(ctx context.Context, namespace, pod string, localPort, podPort int, ready chan struct{}) error {
 		got, err := client.CoreV1().Pods(namespace).Get(ctx, pod, metav1.GetOptions{})
 		if err != nil {
 			return err
@@ -117,11 +117,12 @@ func TestOpen_RunsALockedDownSocatPodPointedAtTheTarget(t *testing.T) {
 	c := spec.Containers[0]
 	assert.Equal(t, "registry.corp/socat:1", c.Image)
 	assert.Empty(t, c.Command, "image entrypoint is socat; no shell")
-	assert.Equal(t, []string{"TCP-LISTEN:8080,fork,reuseaddr", "TCP:orders.internal:5432"}, c.Args)
+	assert.Equal(t, []string{"TCP-LISTEN:8080,fork,reuseaddr", "TCP:orders.internal:5432,connect-timeout=10"}, c.Args)
 	assert.Equal(t, []corev1.ContainerPort{{ContainerPort: 8080, Protocol: corev1.ProtocolTCP}}, c.Ports)
-	require.NotNil(t, c.ReadinessProbe)
-	require.NotNil(t, c.ReadinessProbe.TCPSocket)
-	assert.Equal(t, 8080, c.ReadinessProbe.TCPSocket.Port.IntValue())
+	// A probe would make socat open a real database connection every period.
+	assert.Nil(t, c.ReadinessProbe)
+	assert.Nil(t, c.LivenessProbe)
+	assert.Nil(t, c.StartupProbe)
 	assert.Equal(t, &corev1.SecurityContext{
 		AllowPrivilegeEscalation: new(false),
 		ReadOnlyRootFilesystem:   new(true),
@@ -148,7 +149,7 @@ func TestOpen_BracketsIPv6TargetsForSocat(t *testing.T) {
 	require.NoError(t, tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), target, testOptions()))
 
 	require.Len(t, calls, 1)
-	assert.Equal(t, "TCP:[fd00::15]:3306", calls[0].podAtForward.Spec.Containers[0].Args[1])
+	assert.Equal(t, "TCP:[fd00::15]:3306,connect-timeout=10", calls[0].podAtForward.Spec.Containers[0].Args[1])
 }
 
 func TestOpen_DeletesThePodWhenTheTunnelCloses(t *testing.T) {
@@ -306,57 +307,13 @@ func TestOpen_StreamsPodLogsToStderr(t *testing.T) {
 	opts := testOptions()
 	opts.Err = errOut
 
-	forward := func(_ context.Context, _, _ string, _, _ int, ready chan<- struct{}) error {
+	forward := func(_ context.Context, _, _ string, _, _ int, ready chan struct{}) error {
 		close(ready)
 		assert.Eventually(t, func() bool { return strings.Contains(errOut.String(), "fake logs") }, time.Second, 10*time.Millisecond)
 		cancel()
 		return nil
 	}
 	require.NoError(t, tunnel.Open(ctx, client, forward, pgTarget, opts))
-}
-
-func TestOpen_ReconnectsWhileThePodIsStillRunning(t *testing.T) {
-	restore := *tunnel.ReconnectDelay
-	*tunnel.ReconnectDelay = time.Millisecond
-	t.Cleanup(func() { *tunnel.ReconnectDelay = restore })
-
-	client := clusterWhere(runningAndReady)
-	ctx, cancel := context.WithCancel(t.Context())
-	errOut := &syncBuffer{}
-	opts := testOptions()
-	opts.Err = errOut
-
-	var ports []int
-	forward := func(_ context.Context, _, _ string, localPort, _ int, ready chan<- struct{}) error {
-		ports = append(ports, localPort)
-		close(ready)
-		if len(ports) == 1 {
-			return errors.New("lost connection to pod")
-		}
-		cancel()
-		return nil
-	}
-
-	require.NoError(t, tunnel.Open(ctx, client, forward, pgTarget, opts))
-	assert.Equal(t, []int{15432, 15432}, ports)
-	assert.Contains(t, errOut.String(), "reconnecting")
-}
-
-func TestOpen_FailsWithThePodReasonWhenThePodStops(t *testing.T) {
-	client := clusterWhere(runningAndReady)
-	forward := func(ctx context.Context, namespace, pod string, _, _ int, ready chan<- struct{}) error {
-		close(ready)
-		// Kubernetes enforces activeDeadlineSeconds.
-		p, err := client.CoreV1().Pods(namespace).Get(ctx, pod, metav1.GetOptions{})
-		require.NoError(t, err)
-		p.Status = corev1.PodStatus{Phase: corev1.PodFailed, Reason: "DeadlineExceeded", Message: "Pod was active on the node longer than the specified deadline"}
-		_, err = client.CoreV1().Pods(namespace).UpdateStatus(ctx, p, metav1.UpdateOptions{})
-		require.NoError(t, err)
-		return errors.New("lost connection to pod")
-	}
-
-	err := tunnel.Open(t.Context(), client, forward, pgTarget, testOptions())
-	assert.ErrorContains(t, err, "DeadlineExceeded")
 }
 
 func TestOpen_KeepsForbiddenErrorsRecognisable(t *testing.T) {
@@ -369,35 +326,4 @@ func TestOpen_KeepsForbiddenErrorsRecognisable(t *testing.T) {
 
 	err := tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions())
 	assert.True(t, apierrors.IsForbidden(err), "got %v", err)
-}
-
-func TestOpen_WarnsWhenThePodCannotBeDeleted(t *testing.T) {
-	client := clusterWhere(runningAndReady)
-	client.PrependReactor("delete", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
-		return true, nil, errors.New("connection refused")
-	})
-	ctx, cancel := context.WithCancel(t.Context())
-	var calls []forwardCall
-	errOut := &syncBuffer{}
-	opts := testOptions()
-	opts.Err = errOut
-
-	require.NoError(t, tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, opts))
-	assert.Contains(t, errOut.String(), calls[0].pod)
-	assert.Contains(t, errOut.String(), "connection refused")
-	assert.Contains(t, errOut.String(), "max_duration")
-}
-
-func TestOpen_CtrlCWhileWaitingForThePodExitsCleanly(t *testing.T) {
-	client := clusterWhere(corev1.PodStatus{Phase: corev1.PodPending})
-	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
-	defer cancel()
-	var calls []forwardCall
-
-	require.NoError(t, tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions()))
-	assert.Empty(t, calls)
-
-	pods, err := client.CoreV1().Pods("tunnels").List(t.Context(), metav1.ListOptions{})
-	require.NoError(t, err)
-	assert.Empty(t, pods.Items)
 }

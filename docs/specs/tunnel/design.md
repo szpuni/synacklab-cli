@@ -46,7 +46,7 @@ pkg/tunnel/
   tunnel.go       Target, Options, Open — lifecycle orchestration
   pod.go          buildPod(Target, Options) *corev1.Pod — pure
   wait.go         waitReady(ctx, client, ns, name) — readiness + fail-fast reasons
-  forward.go      SPDYForwarder(restConfig) Forwarder — real client-go portforward
+  forward.go      PortForwarder(restConfig, client, errOut) Forwarder — real client-go portforward
   kube.go         NewClient(kubeconfigContext) (kubernetes.Interface, *rest.Config, error)
   engine.go       DefaultPort(engine string) (int, error)
   validate.go     ValidateHost, ValidatePort, SanitizeUser
@@ -101,7 +101,7 @@ func Open(ctx context.Context, client kubernetes.Interface, forward Forwarder,
 - `kubernetes.Interface` is client-go's own interface; tests use
   `k8s.io/client-go/kubernetes/fake`. No new interface is introduced.
 - `Forwarder` is a function type rather than an interface: one method, one real
-  implementation (`SPDYForwarder`), one test stub. It's the only seam the fake
+  implementation (`PortForwarder`), one test stub. It's the only seam the fake
   clientset can't cover, because port-forward goes over SPDY, not the typed API.
 - `Open` blocks until the tunnel ends. It returns `nil` on user-initiated
   shutdown (ctx cancelled) and an error otherwise.
@@ -127,9 +127,8 @@ spec:
   containers:
   - name: socat
     image: <image>
-    args: ["TCP-LISTEN:8080,fork,reuseaddr", "TCP:<host>:<port>"]
+    args: ["TCP-LISTEN:8080,fork,reuseaddr", "TCP:<host>:<port>,connect-timeout=10"]
     ports: [{containerPort: 8080}]
-    readinessProbe: {tcpSocket: {port: 8080}, periodSeconds: 2}
     resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 200m, memory: 64Mi}}
     securityContext:
       allowPrivilegeEscalation: false
@@ -137,6 +136,13 @@ spec:
       capabilities: {drop: [ALL]}
 ```
 
+- No probes (Req 3.6): a TCP probe makes socat dial the target every period.
+  Against MySQL, which speaks first, that produced a `Broken pipe` log line
+  every 2s and aborted connections on the server. socat listens within
+  milliseconds of starting, so a Running container is treated as ready.
+- `connect-timeout=10` turns silently dropped traffic (a firewall or security
+  group blocking the pod) into a socat error on the user's stderr within
+  seconds instead of the OS's ~2-minute TCP timeout.
 - The pod always listens on 8080, regardless of target port, so it never needs
   `NET_BIND_SERVICE` (relevant later for OpenSearch on 443).
 - The image's entrypoint is `socat`; `args` are socat's argv. No shell is
@@ -163,19 +169,31 @@ watch-reconnect handling:
 
 - After ready, a goroutine follows `Pods(ns).GetLogs(name, {Follow: true})` and
   copies to `opts.Err`. It ends with ctx or when the pod goes away.
-- The forward loop calls `forward(...)`. When it returns and ctx is not done, it
-  `Get`s the pod: Running → print "connection to pod lost, reconnecting" and call
-  `forward` again after 1s; anything else → return an error with phase/reason.
-  No retry cap: a Running pod is the only condition for retrying, and
-  `activeDeadlineSeconds` bounds the pod's life.
+- The forward loop calls `forward(...)` with a per-attempt context. Beside it,
+  `stopWhenPodStops` polls the pod every 5s and cancels that context once the
+  pod leaves Running: client-go's forwarder only listens locally, so an idle
+  tunnel never notices the pod dying by itself (seen against kind with
+  `max_duration: 1m` — the CLI hung on a `DeadlineExceeded` pod).
+- When `forward` returns and ctx is not done, the loop looks the pod up via
+  `getPodRetrying` (retries API errors every 1s for up to 1 minute — a
+  restarting API server answers Forbidden for a few seconds while its RBAC
+  cache warms up): Running → print "Connection to tunnel pod lost; reconnecting"
+  and call `forward` again after 1s; anything else → return an error with
+  phase/reason. No reconnect cap: a Running pod is the only condition for
+  retrying, and `activeDeadlineSeconds` bounds the pod's life.
+- Teardown (`deletePod`) retries Delete every 1s within its 10s budget and
+  treats NotFound as success, for the same API-restart reason.
 
-### SPDYForwarder
+### PortForwarder
 
-Wraps `k8s.io/client-go/tools/portforward` + `transport/spdy`, building the
-`pods/<name>/portforward` URL from the REST config, with
-`portforward.NewOnAddresses(dialer, []string{"127.0.0.1"}, ...)` so it never binds
-a non-loopback address. Not unit-tested (needs a real API server); covered by the
-manual verification task and the optional kind integration test.
+Wraps `k8s.io/client-go/tools/portforward`, building the
+`pods/<name>/portforward` URL from the clientset's REST client. Like kubectl it
+dials SPDY-over-WebSocket first and falls back to plain SPDY
+(`NewFallbackDialerForStreaming`), using the `k8s.io/streaming` httpstream types
+(the apimachinery ones are deprecated). It listens via
+`NewOnAddressesForStreamingWithContext(ctx, dialer, []string{"127.0.0.1"}, ...)`
+so it never binds a non-loopback address. Not unit-tested (needs a real API
+server); covered by the manual verification against kind.
 
 ### NewClient
 
@@ -197,7 +215,7 @@ that `eks-config` writes).
    `os/user`, sanitized).
 4. `signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)` — same pattern as
    `runbook_run.go`.
-5. `NewClient`, then `tunnel.Open(ctx, client, tunnel.SPDYForwarder(restCfg), target, opts)`.
+5. `NewClient`, then `tunnel.Open(ctx, client, tunnel.PortForwarder(restCfg, client, os.Stderr), target, opts)`.
 6. On a Forbidden error (`apierrors.IsForbidden`) prints the RBAC hint.
 
 The client hint printed by `Open` is a two-entry map keyed by `Target.Kind`
@@ -279,23 +297,28 @@ tunnel:
 
 ### Unit testing (testify, table-driven)
 
-- `pkg/tunnel/pod_test.go`: `buildPod` — labels, generateName, security
-  contexts, deadline, nodeSelector, args, probe, resources.
-- `pkg/tunnel/validate_test.go`, `engine_test.go`: hosts (valid names, IPv4/IPv6,
-  leading `-`, spaces, empty), ports, user sanitization, engine defaults.
-- `pkg/tunnel/wait_test.go`: fake clientset with pod status updates for each row
-  of the waitReady table.
-- `pkg/tunnel/tunnel_test.go`: `Open` with fake clientset + stub `Forwarder`:
-  - cancel ctx → pod deleted, returns nil
-  - not ready → pod deleted, error
-  - forwarder returns while pod Running → called again
-  - forwarder returns, pod Failed (deadline) → error with reason
-  - Forbidden on create (fake reactor) → error satisfies `apierrors.IsForbidden`
-  - local port busy → error, no pod created
-- `pkg/config/config_test.go`: `ValidateTunnel` — defaults, duplicate names,
-  bad engine/host/port/duration.
-- `internal/cmd/tunnel_db_test.go`: target resolution — name, flags, both
-  (error), `--host` without `--engine` (error), unknown name, empty config.
+Tests sit at public seams only; the pod shape and readiness handling are
+observed through `Open`, not by calling `buildPod`/`waitReady` directly.
+
+- `pkg/tunnel/validate_test.go`: hosts (names, IPv4/IPv6, leading `-`, socat
+  syntax, zone IDs), ports, engine defaults, user sanitization.
+- `pkg/tunnel/tunnel_test.go`: `Open` against the fake clientset, with a create
+  reactor standing in for the scheduler/kubelet and stub `Forwarder`s:
+  - the created pod (name, labels, argv, security contexts, deadline,
+    nodeSelector, resources, no probes); IPv6 bracketing
+  - fail-fast reasons (ImagePullBackOff, Unschedulable, socat exit) and timeout,
+    each deleting the pod and never forwarding
+  - invalid target / busy local port → no cluster calls
+  - banner + client hint; pod logs to stderr
+  - reconnect while Running, including through API errors; pod stopped (after a
+    drop, and while idle) → error with reason
+  - Forbidden stays recognisable; Ctrl-C while waiting → nil + pod deleted;
+    delete retried through API errors; persistent delete failure → warning
+  - knobs (`ReadyTimeout`, `RetryInterval`, `DeleteTimeout`,
+    `PodWatchInterval`) are exposed to tests via `export_test.go`
+- `pkg/config/tunnel_test.go`: loading the section, `ValidateTunnel`, `Lifetime`.
+- `internal/cmd/tunnel_db_test.go`: `resolveDBTarget` — name, flags, picker
+  (stubbed), conflicting/missing flags, unknown name, empty config.
 
 ### Integration testing (optional, `integration` build tag)
 
@@ -330,7 +353,8 @@ Noticed while scoping, not changed by this spec: the CI lint step passes
 
 ## Dependencies to add
 
-- `k8s.io/client-go` v0.37, with matching `k8s.io/api` and `k8s.io/apimachinery`.
+- `k8s.io/client-go` v0.37, with matching `k8s.io/api`, `k8s.io/apimachinery`,
+  and `k8s.io/streaming` (port-forward dialer types).
 
 Risks:
 - Binary size grows noticeably (client-go pulls in the typed API). Accepted as

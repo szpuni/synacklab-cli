@@ -28,4 +28,5 @@ func init() {
 	rootCmd.AddCommand(eksConfigCmd)
 	rootCmd.AddCommand(githubCmd)
 	rootCmd.AddCommand(runbookCmd)
+	rootCmd.AddCommand(tunnelCmd)
 }
