@@ -16,7 +16,7 @@
     runbook tests switched from manual `os.Chdir`+cleanup to `t.Chdir`
   - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.6_
 
-- [ ] 2. Tunnel config section and validation rules (TDD)
+- [x] 2. Tunnel config section and validation rules (TDD)
   - Write table-driven tests first in `pkg/tunnel/validate_test.go` and
     `engine_test.go`: host (hostname, IPv4, IPv6, leading `-`, spaces, empty),
     port bounds, `SanitizeUser` (uppercase, dots, empty → `user`, length cap),
