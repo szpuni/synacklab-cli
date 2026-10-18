@@ -57,6 +57,10 @@ func Open(ctx context.Context, client kubernetes.Interface, forward Forwarder, t
 	}
 	defer deletePod(client, opts.Namespace, pod.Name)
 
+	if err := waitReady(ctx, client, opts.Namespace, pod.Name); err != nil {
+		return err
+	}
+
 	return forward(ctx, opts.Namespace, pod.Name, opts.LocalPort, podPort, make(chan struct{}))
 }
 

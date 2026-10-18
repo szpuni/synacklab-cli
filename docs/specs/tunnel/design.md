@@ -147,8 +147,9 @@ spec:
 
 ### waitReady
 
-Watches the pod (falls back to polling `Get` every 2s if a watch can't be
-established) for up to 2 minutes:
+Polls the pod with `Get` every second (`wait.PollUntilContextTimeout`, first
+check immediate) for up to 2 minutes. Polling is enough at this rate and avoids
+watch-reconnect handling:
 
 | Observation | Result |
 |---|---|

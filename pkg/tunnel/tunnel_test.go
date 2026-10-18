@@ -11,7 +11,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"synacklab/pkg/tunnel"
 )
@@ -27,6 +29,22 @@ func testOptions() tunnel.Options {
 		LocalPort:    15432,
 		User:         "Wojtek",
 	}
+}
+
+var runningAndReady = corev1.PodStatus{
+	Phase:             corev1.PodRunning,
+	ContainerStatuses: []corev1.ContainerStatus{{Name: "socat", Ready: true}},
+}
+
+// clusterWhere returns a fake cluster in which every created pod immediately
+// reports status, standing in for the scheduler and kubelet.
+func clusterWhere(status corev1.PodStatus) *fake.Clientset {
+	client := fake.NewClientset()
+	client.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		action.(k8stesting.CreateAction).GetObject().(*corev1.Pod).Status = status
+		return false, nil, nil
+	})
+	return client
 }
 
 // forwardCall records what Open asked the forwarder to do, and the pod as it
@@ -53,7 +71,7 @@ func closeOnFirstForward(client *fake.Clientset, cancel context.CancelFunc, call
 }
 
 func TestOpen_RunsALockedDownSocatPodPointedAtTheTarget(t *testing.T) {
-	client := fake.NewClientset()
+	client := clusterWhere(runningAndReady)
 	ctx, cancel := context.WithCancel(t.Context())
 	var calls []forwardCall
 
@@ -114,7 +132,7 @@ func TestOpen_RunsALockedDownSocatPodPointedAtTheTarget(t *testing.T) {
 }
 
 func TestOpen_BracketsIPv6TargetsForSocat(t *testing.T) {
-	client := fake.NewClientset()
+	client := clusterWhere(runningAndReady)
 	ctx, cancel := context.WithCancel(t.Context())
 	var calls []forwardCall
 
@@ -126,7 +144,7 @@ func TestOpen_BracketsIPv6TargetsForSocat(t *testing.T) {
 }
 
 func TestOpen_DeletesThePodWhenTheTunnelCloses(t *testing.T) {
-	client := fake.NewClientset()
+	client := clusterWhere(runningAndReady)
 	ctx, cancel := context.WithCancel(t.Context())
 	var calls []forwardCall
 
@@ -143,13 +161,70 @@ func TestOpen_RejectsAnInvalidTargetBeforeTouchingTheCluster(t *testing.T) {
 		"port out of range":    {Kind: "postgres", Host: "db", Port: 0},
 	} {
 		t.Run(name, func(t *testing.T) {
-			client := fake.NewClientset()
+			client := clusterWhere(runningAndReady)
 			ctx, cancel := context.WithCancel(t.Context())
 			var calls []forwardCall
 
 			err := tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), target, testOptions())
 			assert.Error(t, err)
 			assert.Empty(t, client.Actions())
+		})
+	}
+}
+
+func TestOpen_ReportsWhyThePodCouldNotStartAndCleansUp(t *testing.T) {
+	waiting := func(reason, message string) corev1.PodStatus {
+		return corev1.PodStatus{Phase: corev1.PodPending, ContainerStatuses: []corev1.ContainerStatus{{
+			Name:  "socat",
+			State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: reason, Message: message}},
+		}}}
+	}
+	for name, tc := range map[string]struct {
+		status  corev1.PodStatus
+		wantErr []string
+	}{
+		"image cannot be pulled": {
+			status:  waiting("ImagePullBackOff", `Back-off pulling image "registry.corp/socat:1"`),
+			wantErr: []string{"ImagePullBackOff", `Back-off pulling image "registry.corp/socat:1"`},
+		},
+		"no node matches the node selector": {
+			status: corev1.PodStatus{Phase: corev1.PodPending, Conditions: []corev1.PodCondition{{
+				Type: corev1.PodScheduled, Status: corev1.ConditionFalse,
+				Reason: corev1.PodReasonUnschedulable, Message: "0/3 nodes are available: 3 node(s) didn't match Pod's node affinity/selector.",
+			}}},
+			wantErr: []string{"Unschedulable", "didn't match Pod's node affinity/selector"},
+		},
+		"socat exits": {
+			status: corev1.PodStatus{Phase: corev1.PodFailed, ContainerStatuses: []corev1.ContainerStatus{{
+				Name:  "socat",
+				State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "Error", ExitCode: 1}},
+			}}},
+			wantErr: []string{"Error", "exit code 1"},
+		},
+		"never ready": {
+			status:  corev1.PodStatus{Phase: corev1.PodPending},
+			wantErr: []string{"not ready after", "Pending"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			restore := *tunnel.ReadyTimeout
+			*tunnel.ReadyTimeout = 50 * time.Millisecond
+			t.Cleanup(func() { *tunnel.ReadyTimeout = restore })
+
+			client := clusterWhere(tc.status)
+			ctx, cancel := context.WithCancel(t.Context())
+			var calls []forwardCall
+
+			err := tunnel.Open(ctx, client, closeOnFirstForward(client, cancel, &calls), pgTarget, testOptions())
+			require.Error(t, err)
+			for _, want := range tc.wantErr {
+				assert.ErrorContains(t, err, want)
+			}
+			assert.Empty(t, calls, "must not forward to a pod that is not ready")
+
+			pods, listErr := client.CoreV1().Pods("tunnels").List(t.Context(), metav1.ListOptions{})
+			require.NoError(t, listErr)
+			assert.Empty(t, pods.Items)
 		})
 	}
 }

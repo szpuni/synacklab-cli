@@ -43,8 +43,9 @@
   - Verify: `go test ./pkg/tunnel` and `golangci-lint run` (gomodguard clean)
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 9.5_
 
-- [ ] 4. Wait for readiness with fail-fast reasons (TDD)
-  - Write `pkg/tunnel/wait_test.go` with the fake clientset: Ready → nil;
+- [x] 4. Wait for readiness with fail-fast reasons (TDD)
+  - Write tests through `Open` (fake clientset + create reactor that sets pod
+    status): Ready → forwards;
     ImagePullBackOff, Unschedulable, terminated container → immediate error
     with reason; never ready → timeout error (inject a short timeout)
   - Implement `pkg/tunnel/wait.go`
