@@ -5,21 +5,21 @@
 class Synacklab < Formula
   desc "A command-line tool for DevOps engineers to manage AWS SSO authentication and profile configuration"
   homepage "https://github.com/szpuni/synacklab-cli"
-  version "0.5.0"
+  version "0.6.0"
   license "GPL-3.0-only"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/szpuni/synacklab-cli/releases/download/v0.5.0/synacklab-cli_Darwin_arm64.tar.gz"
-      sha256 "c1b771fe26ebad7e3f62e6311c6c7f8477a08211f5084d1a4439d311df413a83"
+      url "https://github.com/szpuni/synacklab-cli/releases/download/v0.6.0/synacklab-cli_Darwin_arm64.tar.gz"
+      sha256 "c2f5553302cdb4746423b1e2ff0c9d0ece23a75e5214beabff85e7a2ba1293ae"
 
       def install
         bin.install "synacklab"
       end
     end
     if Hardware::CPU.intel?
-      url "https://github.com/szpuni/synacklab-cli/releases/download/v0.5.0/synacklab-cli_Darwin_x86_64.tar.gz"
-      sha256 "abd8865d9b4a7cc29a8bdd94a274d0a600d9a18a159e70b916df7378d312e6fa"
+      url "https://github.com/szpuni/synacklab-cli/releases/download/v0.6.0/synacklab-cli_Darwin_x86_64.tar.gz"
+      sha256 "996ac681b616b1e690d9e6d96be3e3f74026d68a0b13506836631a418d01b0e1"
 
       def install
         bin.install "synacklab"
@@ -29,16 +29,16 @@ class Synacklab < Formula
 
   on_linux do
     if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
-      url "https://github.com/szpuni/synacklab-cli/releases/download/v0.5.0/synacklab-cli_Linux_arm64.tar.gz"
-      sha256 "842d9ffc824fc11aa57ff2bb10f3787fe79f1dfcf9e14ef3a4b049d91a725edb"
+      url "https://github.com/szpuni/synacklab-cli/releases/download/v0.6.0/synacklab-cli_Linux_arm64.tar.gz"
+      sha256 "0fb1400f889d26c882dfcc83b8cadb7694a1748d6715e04a12e727dff64a12d4"
 
       def install
         bin.install "synacklab"
       end
     end
     if Hardware::CPU.intel?
-      url "https://github.com/szpuni/synacklab-cli/releases/download/v0.5.0/synacklab-cli_Linux_x86_64.tar.gz"
-      sha256 "5f534e4079c1d8d8f9e31d98230e8bc098e12594e5b42b7ec940664b349d37bf"
+      url "https://github.com/szpuni/synacklab-cli/releases/download/v0.6.0/synacklab-cli_Linux_x86_64.tar.gz"
+      sha256 "345aab437cf960a62460b986921cfcd815afdef0b7d860a0f81108b93d11f869"
 
       def install
         bin.install "synacklab"
