@@ -23,6 +23,10 @@ aws:
 github:
   # GitHub API settings
 
+# Tunnel Configuration
+tunnel:
+  # Tunnel pod settings and database targets
+
 # Application Settings
 app:
   # General application behavior
@@ -316,6 +320,42 @@ export NO_PROXY="localhost,127.0.0.1,.company.com"
 export SYNACKLAB_TLS_INSECURE_SKIP_VERIFY="false"
 export SYNACKLAB_TLS_CA_BUNDLE="/etc/ssl/certs/ca-bundle.pem"
 ```
+
+## Tunnel Configuration
+
+Settings for `synacklab tunnel` (see [Tunnels](tunnel.md)). Every field is optional.
+
+```yaml
+tunnel:
+  namespace: synacklab-tunnels   # where tunnel pods run
+  image: alpine/socat:1.8.1.1@sha256:7f9a06753033f2b7de18edc2353f2c15153413d95a039163c6db270fc7a6c3b0
+  max_duration: 8h               # Kubernetes kills the pod after this
+  node_selector:                 # run on nodes the database accepts traffic from
+    subnet: app
+  databases:
+    - name: prod-orders
+      engine: postgres
+      host: orders.internal
+    - name: billing
+      engine: mysql
+      host: 10.20.3.15
+      port: 3307
+```
+
+#### Configuration Details
+
+| Field | Default | Description |
+|---|---|---|
+| `namespace` | `synacklab-tunnels` | Namespace for tunnel pods. `--namespace` overrides it. |
+| `image` | pinned `alpine/socat` | Image whose entrypoint is `socat`; pin by digest when overriding (e.g. a registry mirror). |
+| `max_duration` | `8h` | Go duration (`90m`, `2h`). Sets the pod's `activeDeadlineSeconds`. |
+| `node_selector` | none | Node labels for the tunnel pod, so its traffic comes from an allowed subnet. |
+| `databases[].name` | required | Unique name used by `synacklab tunnel db <name>` and the picker. |
+| `databases[].engine` | required | `mysql` or `postgres`. |
+| `databases[].host` | required | Hostname or IP, resolved inside the cluster. |
+| `databases[].port` | engine default | 3306 for mysql, 5432 for postgres. |
+
+The section is validated when a tunnel command runs; other commands ignore it.
 
 ## Configuration Examples
 

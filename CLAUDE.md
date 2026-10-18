@@ -32,6 +32,8 @@ internal/cmd/                thin Cobra command wrappers
   aws_config.go, aws_login.go, aws_sync.go
   eks_config.go, eks_ctx.go
   github_apply.go github_validate.go, github.go
+  tunnel.go, tunnel_db.go     `tunnel` parent (shared --context/--namespace, tunnelOptions)
+                              and `tunnel db` (target from name | --host/--engine | picker)
 
 internal/auth/                AWS SSO device-authorization flow
   manager.go   DefaultManager implements Manager (Authenticate, IsAuthenticated,
@@ -52,6 +54,19 @@ pkg/fuzzy/                    interactive selection, three tiers with fallback
   interactive.go InteractiveFinderImpl, raw-terminal arrow-key UI
   fuzzy.go       Finder, numbered-list fallback
   Select() cascades fzf -> interactive -> simple on failure.
+
+pkg/tunnel/                   TCP tunnels via a socat pod + kube port-forward (spec:
+                              docs/specs/tunnel/; operator guide: docs/tunnel.md)
+  tunnel.go    Open(ctx, kubernetes.Interface, Forwarder, Target, Options): validate,
+               check local port, create pod, waitReady, forward loop (reconnects
+               while pod Running; stopWhenPodStops polls phase so idle tunnels see
+               max_duration), streams pod logs to stderr, deletePod (retried) on exit
+  pod.go       buildPod: socat on fixed :8080, non-root, ro rootfs, no probes (a probe
+               makes socat dial the DB), connect-timeout=10, activeDeadlineSeconds
+  wait.go      waitReady: polls, fails fast on ImagePull/Unschedulable/terminated
+  forward.go   PortForwarder: client-go WebSocket->SPDY fallback, 127.0.0.1 only
+  kube.go      NewClient: standard kubeconfig loading (exec plugins, --context)
+  validate.go / engine.go  ValidateHost/Port, SanitizeUser, DefaultPort (mysql/postgres)
 
 pkg/github/                   core engine: Terraform-like plan/apply for repo config
   client.go            Client implements APIClient (interfaces.go), thin google/go-github

@@ -91,7 +91,7 @@
     pod), `SilenceUsage` on `tunnel db`
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.6, 1.7, 2.4, 4.5, 5.3, 6.4, 7.1, 7.2, 7.3, 7.4_, 5.7, 5.8, 6.2
 
-- [ ] 7. Documentation
+- [x] 7. Documentation
   - Write `docs/tunnel.md`: Namespace + Role + RoleBinding manifests, optional
     NetworkPolicy, networking/source-IP explanation with `node_selector` and
     provider notes (EKS Security Groups for Pods)
@@ -100,6 +100,11 @@
     tree
   - Verify: apply the RBAC manifest to the dev cluster and repeat task 6's
     manual check as a non-admin user bound to the Role
+  - Verified on kind (Kubernetes 1.36): the documented Role, bound to a
+    ServiceAccount group, runs a tunnel end to end as a non-admin user;
+    `pods/portforward: create` alone is enough (no `get`); a namespace without
+    the Role gives the Forbidden error plus the RBAC hint; the NetworkPolicy
+    passes server-side validation (enforcement depends on the CNI, not tested)
   - _Requirements: 8.1, 8.2, 8.3, 8.4_
 
 - [ ] 8. Final gates
