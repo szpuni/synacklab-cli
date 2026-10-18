@@ -8,7 +8,7 @@ const STATE_TONES = { starting: "warning", connected: "success", closing: "warni
 const isActive = (state) => state === "starting" || state === "connected" || state === "closing";
 
 let config = null;
-let openBtn = null;
+let form = null; // fieldset: disabling it disables every control in the form
 let formError = null;
 
 async function api(method, path, body) {
@@ -43,7 +43,7 @@ function renderForm() {
   for (const el of [target, engine, port]) el.addEventListener("input", update);
 
   formError = h("div", { className: "form-error", role: "alert" });
-  openBtn = button({
+  const openBtn = button({
     label: "Open tunnel",
     variant: "primary",
     size: "md",
@@ -61,7 +61,7 @@ function renderForm() {
     },
   });
 
-  formEl.replaceChildren(card({
+  form = h("fieldset", { className: "form" }, card({
     title: "Open a tunnel",
     body: [
       config.database_error && h("div", { className: "banner" }, `Configured databases are unavailable: ${config.database_error}`),
@@ -74,18 +74,19 @@ function renderForm() {
     ],
     actions: [openBtn, formError],
   }));
+  formEl.replaceChildren(form);
   update();
 }
 
 async function openTunnel(req) {
   formError.textContent = "";
-  openBtn.disabled = true;
+  form.disabled = true;
   try {
     const { id } = await api("POST", "/api/tunnels", req);
     watch(id);
   } catch (err) {
     formError.textContent = err.message;
-    openBtn.disabled = false;
+    form.disabled = false;
   }
 }
 
@@ -93,25 +94,31 @@ async function openTunnel(req) {
 // stream: output so far, then each change, until the tunnel ends.
 function watch(id) {
   const output = logView();
+  let partial = ""; // a line split across stream messages
   let el = null;
   const render = (t) => {
     const next = renderTunnel(t, output);
     if (el) el.replaceWith(next);
     else tunnelsEl.replaceChildren(next); // ponytail: one tunnel at a time; append once several are allowed
     el = next;
-    openBtn.disabled = isActive(t.state);
+    form.disabled = isActive(t.state);
   };
 
   const ws = new WebSocket(`ws://${location.host}/ws/tunnels/${id}`);
   ws.onmessage = (msg) => {
     const ev = JSON.parse(msg.data);
     if (ev.type === "output") {
-      for (const line of ev.text.replace(/\n$/, "").split("\n")) output.append(line);
+      const lines = (partial + ev.text).split("\n");
+      partial = lines.pop();
+      for (const line of lines) output.append(line);
     } else {
       render(ev.tunnel);
     }
   };
-  ws.onclose = () => void refresh(id, render);
+  ws.onclose = () => {
+    if (partial) output.append(partial);
+    void refresh(id, render);
+  };
 }
 
 // refresh shows the tunnel's final state if the stream ended without it.
@@ -119,7 +126,7 @@ async function refresh(id, render) {
   const tunnels = await api("GET", "/api/tunnels").catch(() => []);
   const t = tunnels.find((x) => x.id === id);
   if (t) render(t);
-  else openBtn.disabled = false;
+  else form.disabled = false;
 }
 
 function renderTunnel(t, output) {

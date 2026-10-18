@@ -5,12 +5,16 @@ import (
 	"sync"
 )
 
+// tunnelState is where a tunnel is in its life: starting → connected →
+// closing → closed, or failed.
+type tunnelState string
+
 const (
-	stateStarting  = "starting"
-	stateConnected = "connected"
-	stateClosing   = "closing"
-	stateClosed    = "closed"
-	stateFailed    = "failed"
+	stateStarting  tunnelState = "starting"
+	stateConnected tunnelState = "connected"
+	stateClosing   tunnelState = "closing"
+	stateClosed    tunnelState = "closed"
+	stateFailed    tunnelState = "failed"
 )
 
 // tunnelRun is one tunnel opened from the page: its state and everything it
@@ -22,7 +26,7 @@ type tunnelRun struct {
 	cancel context.CancelFunc
 
 	mu      sync.Mutex
-	state   string
+	state   tunnelState
 	pod     string
 	err     string
 	output  []byte
@@ -30,15 +34,15 @@ type tunnelRun struct {
 }
 
 type tunnelView struct {
-	ID        string `json:"id"`
-	State     string `json:"state"`
-	Pod       string `json:"pod,omitempty"`
-	Namespace string `json:"namespace"`
-	Context   string `json:"context,omitempty"`
-	Target    string `json:"target"`
-	LocalAddr string `json:"local_addr"`
-	Hint      string `json:"hint,omitempty"`
-	Error     string `json:"error,omitempty"`
+	ID        string      `json:"id"`
+	State     tunnelState `json:"state"`
+	Pod       string      `json:"pod,omitempty"`
+	Namespace string      `json:"namespace"`
+	Context   string      `json:"context,omitempty"`
+	Target    string      `json:"target"`
+	LocalAddr string      `json:"local_addr"`
+	Hint      string      `json:"hint,omitempty"`
+	Error     string      `json:"error,omitempty"`
 }
 
 func newTunnelRun(id string, req Request, target Target, cancel context.CancelFunc) *tunnelRun {
@@ -83,7 +87,11 @@ func (t *tunnelRun) finish(err error) {
 func (t *tunnelRun) finished() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.state == stateClosed || t.state == stateFailed
+	return t.state.done()
+}
+
+func (s tunnelState) done() bool {
+	return s == stateClosed || s == stateFailed
 }
 
 // since returns the output after the first offset bytes, the current view,

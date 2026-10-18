@@ -298,3 +298,22 @@ func TestServer_PageUsesTheKitAndRealEndpoints(t *testing.T) {
 		assert.Contains(t, js, endpoint)
 	}
 }
+
+func TestServer_PageGetsEmptyListsNotNullWithoutContextsOrDatabases(t *testing.T) {
+	srv := tunnel.NewServer(t.Context(), tunnel.ServerConfig{})
+	rec := httptest.NewRecorder()
+	srv.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/config", nil))
+
+	assert.Contains(t, rec.Body.String(), `"contexts":[]`)
+	assert.Contains(t, rec.Body.String(), `"databases":[]`)
+}
+
+func TestServer_RejectsAnInvalidLocalPortBeforeStarting(t *testing.T) {
+	ts, _, _ := startTunnelServer(t, newFakeCluster())
+
+	code, body := postTunnel(t, ts, `{"name":"orders","local_port":70000}`)
+
+	assert.Equal(t, http.StatusBadRequest, code)
+	assert.Equal(t, "local invalid port 70000: must be between 1 and 65535", body["error"], "same message as tunnel db")
+	assert.Empty(t, listTunnels(t, ts))
+}

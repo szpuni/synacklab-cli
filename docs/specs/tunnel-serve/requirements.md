@@ -31,7 +31,7 @@ so that I can open tunnels without remembering flags.
 1. WHEN the user runs `synacklab tunnel serve` THEN the system SHALL serve the tunnel UI on `127.0.0.1:4748` and print its URL.
 2. WHEN `--port` or `--bind` is given THEN the system SHALL use them, subject to web-ui-kit Requirement 5 (loopback only, Host/Origin guard).
 3. WHEN `--context` or `--namespace` is given THEN the system SHALL use them as the form's preselected values.
-4. IF `~/.synacklab/config.yaml` fails to load THEN the system SHALL fail before listening, as `tunnel db` does.
+4. IF `~/.synacklab/config.yaml` or the kubeconfig fails to load, or `tunnel.max_duration` is invalid, THEN the system SHALL fail before listening, as `tunnel db` does before contacting the cluster.
 5. IF `tunnel.databases` is invalid THEN the system SHALL still start, show the validation error in place of the database list, and allow ad hoc targets (tunnel Requirement 2.3: databases are validated only when used).
 
 ### Requirement 2 — Choosing a target (parity with `tunnel db`)
@@ -58,6 +58,7 @@ connect, so that I don't need the terminal.
 3. WHILE the tunnel runs THEN the page SHALL stream the tunnel's output and warnings (the CLI's stdout/stderr text, including socat pod logs and reconnect notices) live.
 4. WHEN `tunnel.Open` returns an error THEN the tunnel SHALL show as `failed` with that error text, including the RBAC hint for Forbidden errors.
 5. IF a tunnel is already starting or connected THEN the system SHALL reject another request with HTTP 409 and the page SHALL disable the open form while one is active.
+7. IF the local port is outside 1–65535 THEN the system SHALL reject the request with HTTP 400 and the CLI's message, before creating a pod.
 6. WHEN the page is reloaded or reopened THEN it SHALL show the current tunnel's status and output so far.
 
 ### Requirement 4 — Closing and cleanup

@@ -9,6 +9,8 @@ main.page {
 
 main.page > div { max-width: 860px; margin: 0 auto; }
 
+fieldset.form { border: 0; margin: 0; padding: 0; min-width: 0; }
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
-	"io/fs"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -16,15 +15,6 @@ import (
 
 //go:embed web
 var webFS embed.FS
-
-// webRoot strips the "web" prefix so the embedded files serve at "/", "/app.js", etc.
-func webRoot() http.FileSystem {
-	sub, err := fs.Sub(webFS, "web")
-	if err != nil {
-		panic(err) // web/ is embedded at build time; a missing dir is a build-time bug, not a runtime one
-	}
-	return http.FS(sub)
-}
 
 // Server wires the REST/WebSocket API around the active Session. One Server
 // per running `serve` process (Requirement 14.1).
@@ -89,7 +79,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/files", s.handleGetFiles)
 	mux.HandleFunc("POST /api/open", s.handlePostOpen)
 	mux.Handle("GET /ui/", http.StripPrefix("/ui", webui.Assets()))
-	mux.Handle("GET /", http.FileServer(webRoot()))
+	mux.Handle("GET /", webui.FileServer(webFS, "web"))
 	return mux
 }
 

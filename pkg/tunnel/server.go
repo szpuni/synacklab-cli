@@ -7,7 +7,6 @@ import (
 	"embed"
 	"encoding/json"
 	"io"
-	"io/fs"
 	"maps"
 	"net"
 	"net/http"
@@ -94,11 +93,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /api/tunnels/{id}", s.handleCloseTunnel)
 	mux.HandleFunc("GET /ws/tunnels/{id}", s.handleWatchTunnel)
 	mux.Handle("GET /ui/", http.StripPrefix("/ui", webui.Assets()))
-	web, err := fs.Sub(webFS, "web")
-	if err != nil {
-		panic(err) // web/ is embedded at build time; a missing dir is a build bug
-	}
-	mux.Handle("GET /", http.FileServer(http.FS(web)))
+	mux.Handle("GET /", webui.FileServer(webFS, "web"))
 	return mux
 }
 
@@ -112,14 +107,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 	for _, name := range slices.Sorted(maps.Keys(engines)) {
 		engineList = append(engineList, engineView{name, engines[name].port})
 	}
-	databases := s.cfg.Databases
-	if databases == nil {
-		databases = []Database{} // JSON [] rather than null
-	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"databases":      databases,
+		"databases":      orEmpty(s.cfg.Databases),
 		"database_error": s.cfg.DatabaseErr,
-		"contexts":       s.cfg.Contexts,
+		"contexts":       orEmpty(s.cfg.Contexts),
 		"engines":        engineList,
 		"defaults":       s.cfg.Defaults,
 	})
@@ -147,6 +138,10 @@ func (s *Server) handleOpenTunnel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.LocalPort = cmp.Or(req.LocalPort, target.Port)
+	if err := ValidatePort(req.LocalPort); err != nil {
+		writeError(w, http.StatusBadRequest, "local "+err.Error())
+		return
+	}
 	req.Context = cmp.Or(req.Context, s.cfg.Defaults.Context)
 	req.Namespace = cmp.Or(req.Namespace, s.cfg.Defaults.Namespace)
 
@@ -211,7 +206,7 @@ func (s *Server) handleWatchTunnel(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	sent, lastState := 0, ""
+	sent, lastState := 0, tunnelState("")
 	for {
 		output, view, changed := run.since(sent)
 		sent += len(output)
@@ -226,7 +221,7 @@ func (s *Server) handleWatchTunnel(w http.ResponseWriter, r *http.Request) {
 			}
 			lastState = view.State
 		}
-		if view.State == stateClosed || view.State == stateFailed {
+		if view.State.done() {
 			return
 		}
 		select {
@@ -252,6 +247,14 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// orEmpty makes a nil slice encode as JSON [] rather than null.
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
 }
 
 func localAddr(port int) string {

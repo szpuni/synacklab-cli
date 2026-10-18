@@ -59,9 +59,14 @@ var assetsFS embed.FS
 //
 //	mux.Handle("GET /ui/", http.StripPrefix("/ui", webui.Assets()))
 func Assets() http.Handler {
-	sub, err := fs.Sub(assetsFS, "assets")
+	return FileServer(assetsFS, "assets")
+}
+
+// FileServer serves the embedded directory dir of fsys at "/".
+func FileServer(fsys embed.FS, dir string) http.Handler {
+	sub, err := fs.Sub(fsys, dir)
 	if err != nil {
-		panic(err) // assets/ is embedded at build time; a missing dir is a build bug
+		panic(err) // dir is embedded at build time; a missing dir is a build bug
 	}
 	return http.FileServer(http.FS(sub))
 }

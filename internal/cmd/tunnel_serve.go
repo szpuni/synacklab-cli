@@ -72,11 +72,14 @@ func runTunnelServe(_ *cobra.Command, _ []string) error {
 	}
 
 	// SIGINT/SIGTERM stops the page and closes the open tunnel; Wait holds
-	// the exit until its pod is deleted.
+	// the exit until its pod is deleted. Signals stay caught until then, so a
+	// second Ctrl-C cannot cut the deletion short.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	srv := tunnel.NewServer(ctx, tunnelServerConfig(cfg.Tunnel, contexts, current))
-	defer srv.Wait()
 	defer stop()
+	tunnelsCtx, closeTunnels := context.WithCancel(ctx)
+	srv := tunnel.NewServer(tunnelsCtx, tunnelServerConfig(cfg.Tunnel, contexts, current))
+	defer srv.Wait()
+	defer closeTunnels()
 
 	fmt.Printf("Serving tunnels at http://%s\n", ln.Addr())
 	return webui.Serve(ctx, ln, srv.Routes(), logger)
