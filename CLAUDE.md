@@ -3,6 +3,25 @@
 Go CLI (module `synacklab`, ~29.5k LOC) for DevOps engineers: AWS SSO auth, EKS/kube
 context management, and declarative GitHub repo management. Cobra-based.
 
+## Spec-driven workflow (read this first)
+
+Features and non-trivial fixes are developed via **spec-driven development**:
+`requirements.md` (EARS-format acceptance criteria) → `design.md` (architecture/components)
+→ `tasks.md` (ordered, demo-verifiable implementation steps), each task backlinked to
+requirement numbers. An optional `project-brief.md` holds the original brief when one exists.
+
+- **`docs/specs/<spec-name>/`** is where every spec lives — one self-contained folder per
+  spec, same three-document shape. Before changing an area a spec covers, read its
+  `requirements.md` and `design.md`; treat `requirements.md` as the source of truth for
+  expected behavior. Work task-by-task from `tasks.md`, ticking boxes only once each task's
+  verify check passes.
+- When starting new non-trivial feature or remediation work, create a new
+  `docs/specs/<spec-name>/` rather than improvising an ad hoc plan. Don't mix unrelated
+  efforts into an existing spec folder — give each its own, on its own branch.
+- **`.kiro/` is historical and read-only.** `.kiro/specs/*/` documents features built
+  before the move (AWS auth, GitHub repo management); `.kiro/steering/*.md` still states
+  the project's tech/structure rules. Never create a new spec under `.kiro/`.
+
 ## Architecture
 
 ```
@@ -76,8 +95,8 @@ pkg/github/                   core engine: Terraform-like plan/apply for repo co
 - Files should stay under 500 lines (enforced during the 2026-09-07 review pass — see
   `pkg/github/errors.go`/`retry.go`/`multi_errors.go` and `merger.go`/`merger_fields.go`
   for the split pattern used when a file grows past it).
-- `.kiro/steering/*.md` and `.kiro/specs/*/design.md` hold this project's own spec-driven
-  design docs — check them before assuming intent on auth/config/GitHub features. Note:
+- `docs/specs/*/` (current) and `.kiro/specs/*/` (historical) hold this project's
+  spec-driven design docs — check them before assuming intent on a feature. Note:
   this project's maintainer has explicitly deprioritized aligning GitHub token/webhook
   secret storage with the steering doc's "no plaintext credentials" policy (see below) —
   don't re-raise that specific redesign unless asked.
@@ -131,3 +150,16 @@ make build   # -> ./bin/synacklab
 go test ./...
 golangci-lint run
 ```
+
+## General rules
+
+- Do what's asked; nothing more. Don't refactor unrelated code while fixing a specific issue.
+- Never create documentation files beyond what's requested (specs under `docs/specs/` are
+  part of the workflow above, not extra docs).
+- Never commit secrets, `.env` files, or credentials.
+- Validate input at system boundaries (CLI flags/args, config files, values from remote APIs).
+- **Never build shell/CLI arguments from unvalidated user input.** Anything passed to
+  `exec.Command` or into a container's command/args must be validated (reject leading `-`,
+  restrict to expected formats) or passed after a `--` separator.
+- Keep files small and focused (<500 lines); prefer editing existing files over creating new ones.
+- Always run `go test ./...` and `golangci-lint run` before considering a change done.
