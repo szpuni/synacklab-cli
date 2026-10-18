@@ -2,21 +2,18 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"synacklab/pkg/config"
-	rblog "synacklab/pkg/log"
 	"synacklab/pkg/runbook"
+	"synacklab/pkg/webui"
 )
 
 var (
@@ -45,12 +42,15 @@ opens automatically; otherwise pick from the sidebar.`,
 
 func init() {
 	runbookServeCmd.Flags().IntVar(&servePort, "port", 4747, "port to listen on")
-	runbookServeCmd.Flags().StringVar(&serveBind, "bind", "127.0.0.1", "address to bind to")
+	runbookServeCmd.Flags().StringVar(&serveBind, "bind", "127.0.0.1", "loopback address to bind to (127.0.0.1, ::1 or localhost)")
 	runbookServeCmd.Flags().StringVar(&serveCwd, "cwd", "", "working directory for step execution (default: the open file's own directory)")
 	runbookCmd.AddCommand(runbookServeCmd)
 }
 
 func runServe(_ *cobra.Command, args []string) error {
+	if err := webui.ValidateBind(serveBind); err != nil {
+		return err
+	}
 	pathArg := ""
 	if len(args) > 0 {
 		pathArg = args[0]
@@ -82,12 +82,7 @@ func runServe(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
 
-	if !isLoopbackBind(serveBind) {
-		fmt.Printf("WARNING: --bind %s exposes this server beyond localhost.\n", serveBind)
-		fmt.Println("Anyone who can reach this port can execute arbitrary commands as the local user — there is no authentication in v1.")
-	}
-
-	// SIGINT/SIGTERM triggers graceful shutdown (serveHTTP) and also cancels
+	// SIGINT/SIGTERM triggers graceful shutdown (webui.Serve) and also cancels
 	// srv's baseCtx, so an in-flight step's process group is killed rather
 	// than orphaned when the server exits (Requirement 3.2's "no process
 	// outlives its own execution" extended to the server's own lifetime).
@@ -96,32 +91,7 @@ func runServe(_ *cobra.Command, args []string) error {
 	srv.SetBaseContext(ctx)
 
 	fmt.Printf("Serving %s at http://%s\n", label, ln.Addr())
-	return serveHTTP(ctx, ln, srv.Routes(), logger)
-}
-
-// serveHTTP runs handler on ln until ctx is canceled, then shuts down
-// gracefully (bounded by a 5s timeout). Split out from runServe so it's
-// testable without going through cobra or the real signal-derived context.
-func serveHTTP(ctx context.Context, ln net.Listener, handler http.Handler, logger *rblog.Logger) error {
-	httpServer := &http.Server{Handler: handler}
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- httpServer.Serve(ln)
-	}()
-
-	select {
-	case err := <-errCh:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return err
-		}
-		return nil
-	case <-ctx.Done():
-		logger.Info("shutting down...")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		return httpServer.Shutdown(shutdownCtx)
-	}
+	return webui.Serve(ctx, ln, srv.Routes(), logger)
 }
 
 // resolveServeTarget resolves pathArg to a workspace root plus an optional
@@ -182,14 +152,4 @@ func buildRunbookServer(root, initialFile, cwdFlag string) (*runbook.Server, str
 		label = initialFile
 	}
 	return srv, label, nil
-}
-
-// isLoopbackBind reports whether bind resolves to localhost only
-// (Requirement 13.1/13.2).
-func isLoopbackBind(bind string) bool {
-	if bind == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(bind)
-	return ip != nil && ip.IsLoopback()
 }

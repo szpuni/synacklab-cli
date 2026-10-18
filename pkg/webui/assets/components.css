@@ -1,0 +1,268 @@
+/* components.css: styles for the components built by components.js, plus the
+   app shell (sidebar, topbar, main). Uses the tokens from tokens.css. */
+
+/* ── App shell ───────────────────────────────────────────────────────── */
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+.sidebar-toggle {
+  display: none;
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 20;
+  border: none;
+  background: var(--accent-500);
+  color: #fff;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+}
+
+.sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 16px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.logo-icon {
+  color: var(--accent-500);
+  font-size: 15px;
+}
+
+.sidebar-title {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 24px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.topbar-info {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast), opacity var(--transition-fast);
+  white-space: nowrap;
+}
+
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-sm { padding: 6px 16px; font-size: 12.5px; }
+.btn-md { padding: 9px 22px; font-size: 13.5px; }
+
+.btn-primary {
+  background: var(--accent-500);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) { background: var(--accent-600); }
+
+.btn-danger {
+  background: var(--danger-600);
+  color: #fff;
+}
+.btn-danger:hover:not(:disabled) { background: #99392C; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+.btn-ghost:hover:not(:disabled) { background: var(--bg-elevated); color: var(--text-primary); }
+
+.reveal-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px;
+}
+
+.reveal-toggle:hover { color: var(--text-primary); }
+
+/* ── Badges ──────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.badge-success { background: #E6F0EA; color: var(--success-600); }
+.badge-warning { background: var(--warning-700); color: var(--warning-500); }
+.badge-danger  { background: var(--danger-700); color: var(--danger-600); }
+
+/* ── Form fields ─────────────────────────────────────────────────────── */
+.field { display: flex; flex-direction: column; gap: 4px; }
+
+.field-input-row { display: flex; align-items: center; gap: 4px; }
+
+.field-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.field-input {
+  background: var(--bg-surface);
+  border: 1.5px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  padding: 7px 10px;
+  min-width: 160px;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: var(--accent-500);
+  box-shadow: 0 0 0 3px var(--accent-100);
+}
+
+/* ── Cards ───────────────────────────────────────────────────────────── */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  margin: 20px 0;
+  padding: 18px 20px;
+  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.card:hover { box-shadow: var(--shadow-md); border-color: var(--border-default); }
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.card-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.card-badges { display: flex; gap: 6px; }
+
+.card-actions { display: flex; align-items: center; gap: 10px; }
+
+/* ── Log view (streamed output) ──────────────────────────────────────── */
+.output {
+  background: #f8fafc;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  min-height: 1.6em;
+  max-height: 320px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  margin-top: 12px;
+}
+
+.output .stderr-line { color: var(--danger-600); }
+.output .status-line { color: var(--accent-600); margin-top: 6px; }
+
+/* ── Empty state ─────────────────────────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20vh 1rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.empty-state-icon { font-size: 32px; opacity: 0.5; }
+
+/* ── Responsive shell ────────────────────────────────────────────────── */
+@media (max-width: 800px) {
+  .sidebar-toggle { display: block; }
+
+  .sidebar {
+    position: fixed;
+    inset: 0 25% 0 0;
+    z-index: 15;
+    transform: translateX(-100%);
+    transition: transform var(--transition-fast);
+    width: auto;
+  }
+
+  .sidebar.open { transform: translateX(0); box-shadow: var(--shadow-md); }
+
+  .topbar { padding-left: 56px; }
+}

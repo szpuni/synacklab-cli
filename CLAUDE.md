@@ -71,6 +71,16 @@ pkg/tunnel/                   TCP tunnels via a socat pod + kube port-forward (s
   validate.go  ValidateHost/Port, SanitizeUser
   engine.go    engines table: default port + client hint per engine (mysql/postgres)
 
+pkg/webui/                    shared kit for local `serve` UIs (spec: docs/specs/web-ui-kit/)
+  webui.go     Serve (graceful shutdown, request logging, local-only guard),
+               ValidateBind (loopback only), Assets (embedded kit at /ui/)
+  guard.go     localOnly: 403 unless Host is the listener's loopback address and
+               Origin (if any) is the same; request logging
+  assets/      tokens.css (design tokens: restyle every UI here), components.css,
+               components.js (ES module factories: h, button, confirmButton, field,
+               textInput, select, badge, card, logView, emptyState, revealToggle).
+               No build step; app web/ folders import from /ui/components.js
+
 pkg/github/                   core engine: Terraform-like plan/apply for repo config
   client.go            Client implements APIClient (interfaces.go), thin google/go-github
                        wrapper, every method wrapped in WithRetry. buildProtectionRequest
