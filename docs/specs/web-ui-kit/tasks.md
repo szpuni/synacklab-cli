@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. `pkg/webui` serve plumbing (TDD)
+- [x] 1. `pkg/webui` serve plumbing (TDD)
   - Tests first: `ValidateBind` table (127.0.0.1, 127.0.0.2, ::1, localhost,
     0.0.0.0, LAN IP, hostname); guard table (allowed host, rebinding host,
     foreign Origin, foreign Origin on WS upgrade, no Origin); `Serve` returns
