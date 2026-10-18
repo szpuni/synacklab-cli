@@ -5,3 +5,19 @@ aws:
   sso:
     start_url: "https://your-company.awsapps.com/start"
     region: "us-east-1"
+
+# Tunnels to private services through a socat pod (see docs/tunnel.md).
+# Every field is optional.
+tunnel:
+  namespace: synacklab-tunnels   # where tunnel pods run
+  max_duration: 8h               # Kubernetes kills the pod after this (whole seconds)
+  node_selector:                 # run on nodes the database accepts traffic from
+    subnet: app
+  databases:                     # used by `synacklab tunnel db [name]`
+    - name: prod-orders
+      engine: postgres           # postgres or mysql
+      host: orders.internal
+    - name: billing
+      engine: mysql
+      host: 10.20.3.15
+      port: 3307                 # default: 5432 for postgres, 3306 for mysql

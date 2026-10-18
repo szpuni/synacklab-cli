@@ -38,7 +38,8 @@ synacklab tunnel db billing --local-port 13306 --context prod -n tunnels
 - Errors from the pod (for example `Connection refused` or `Operation timed
   out` when the database is unreachable) are printed to your terminal.
 - If the connection to the API server drops, the tunnel reconnects as long as
-  the pod is still running.
+  the pod is still running. If the pod stops or is deleted, the tunnel exits
+  within about 5 seconds.
 
 Configure databases and pod settings under `tunnel` in
 `~/.synacklab/config.yaml` (see [Configuration Reference](config-reference.md#tunnel-configuration)):
@@ -116,6 +117,10 @@ roleRef:
 
 If a user lacks these permissions, `synacklab tunnel db` reports the denied
 request and points here.
+
+`pods/portforward: create` is enough: synacklab first tries port-forward over
+WebSocket, which RBAC checks as `get`, and falls back to SPDY, which it checks
+as `create`. Adding `get` lets the WebSocket path succeed directly.
 
 ### Networking: make the pod's traffic acceptable to the database
 

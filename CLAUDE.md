@@ -60,13 +60,15 @@ pkg/tunnel/                   TCP tunnels via a socat pod + kube port-forward (s
   tunnel.go    Open(ctx, corev1client.CoreV1Interface, Forwarder, Target, Options): validate,
                check local port, create pod, waitReady, forward loop (reconnects
                while pod Running; stopWhenPodStops polls phase so idle tunnels see
-               max_duration), streams pod logs to stderr, deletePod (retried) on exit
+               max_duration), streams pod logs to stderr, deletePod (retried) on exit;
+               adds the RBAC hint to Forbidden errors itself (withRBACHint)
   pod.go       buildPod: socat on fixed :8080, non-root, ro rootfs, no probes (a probe
                makes socat dial the DB), connect-timeout=10, activeDeadlineSeconds
   wait.go      waitReady: polls, fails fast on ImagePull/Unschedulable/terminated
   forward.go   PortForwarder: client-go WebSocket->SPDY fallback, 127.0.0.1 only
   kube.go      NewClient: standard kubeconfig loading (exec plugins, --context)
-  validate.go / engine.go  ValidateHost/Port, SanitizeUser, DefaultPort (mysql/postgres)
+  validate.go  ValidateHost/Port, SanitizeUser
+  engine.go    engines table: default port + client hint per engine (mysql/postgres)
 
 pkg/github/                   core engine: Terraform-like plan/apply for repo config
   client.go            Client implements APIClient (interfaces.go), thin google/go-github

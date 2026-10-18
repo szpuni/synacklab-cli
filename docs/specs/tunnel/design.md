@@ -48,11 +48,11 @@ pkg/tunnel/
   wait.go         waitReady(ctx, client, ns, name) — readiness + fail-fast reasons
   forward.go      PortForwarder(restConfig, client, errOut) Forwarder — real client-go portforward
   kube.go         NewClient(kubeContext) (*corev1client.CoreV1Client, *rest.Config, error)
-  engine.go       DefaultPort(engine string) (int, error)
+  engine.go       engines table (default port + client hint); DefaultPort(engine string) (int, error)
   validate.go     ValidateHost, ValidatePort, SanitizeUser
   *_test.go
 pkg/config/
-  config.go       + TunnelConfig, TunnelDatabase, (c *Config) ValidateTunnel()
+  config.go       + TunnelConfig, TunnelDatabase, TunnelConfig.ValidateDatabases(), TunnelConfig.Lifetime()
 internal/cmd/
   tunnel.go       `tunnel` parent: --context, --namespace persistent flags
   tunnel_db.go    `tunnel db [name]`: --host, --port, --engine, --local-port
@@ -163,7 +163,7 @@ watch-reconnect handling:
 | container waiting reason in {`ErrImagePull`, `ImagePullBackOff`, `InvalidImageName`, `CreateContainerConfigError`} | error with reason + message |
 | `PodScheduled=False` with reason `Unschedulable` | error with message (typically a bad `node_selector`) |
 | phase Failed/Succeeded, or container terminated | error with reason + exit code |
-| 2 minutes elapsed | timeout error with last phase/reason |
+| 2 minutes elapsed | timeout error with last phase/reason and container waiting reason |
 
 ### Forward loop and log streaming
 
@@ -173,13 +173,17 @@ watch-reconnect handling:
   `stopWhenPodStops` polls the pod every 5s and cancels that context once the
   pod leaves Running: client-go's forwarder only listens locally, so an idle
   tunnel never notices the pod dying by itself (seen against kind with
-  `max_duration: 1m` — the CLI hung on a `DeadlineExceeded` pod).
+  `max_duration: 1m` — the CLI hung on a `DeadlineExceeded` pod). NotFound
+  (pod deleted from outside) also stops it; other lookup errors are retried.
+- A forward that fails with Forbidden, or a first forward that never became
+  ready, ends the tunnel: retrying cannot fix either (a user without
+  `pods/portforward` otherwise saw "reconnecting" forever).
 - When `forward` returns and ctx is not done, the loop looks the pod up via
   `getPodRetrying` (retries API errors every 1s for up to 1 minute — a
   restarting API server answers Forbidden for a few seconds while its RBAC
   cache warms up): Running → print "Connection to tunnel pod lost; reconnecting"
   and call `forward` again after 1s; anything else → return an error with
-  phase/reason. No reconnect cap: a Running pod is the only condition for
+  phase/reason; NotFound → "tunnel pod was deleted". No reconnect cap: a Running pod is the only condition for
   retrying, and `activeDeadlineSeconds` bounds the pod's life.
 - Teardown (`deletePod`) retries Delete every 1s within its 10s budget and
   treats NotFound as success, for the same API-restart reason.
@@ -192,7 +196,11 @@ dials SPDY-over-WebSocket first and falls back to plain SPDY
 (`NewFallbackDialerForStreaming`), using the `k8s.io/streaming` httpstream types
 (the apimachinery ones are deprecated). It listens via
 `NewOnAddressesForStreamingWithContext(ctx, dialer, []string{"127.0.0.1"}, ...)`
-so it never binds a non-loopback address. Not unit-tested (needs a real API
+so it never binds a non-loopback address. RBAC checks the WebSocket upgrade as
+`get` and SPDY as `create` on `pods/portforward`, so a denied WebSocket upgrade
+still falls back; client-go reports SPDY failures as plain text, so the
+fallback predicate keeps the WebSocket Forbidden status and returns it when
+SPDY fails too (before the forward became ready). Not unit-tested (needs a real API
 server); covered by the manual verification against kind.
 
 ### NewClient
@@ -208,19 +216,23 @@ that `eks-config` writes).
 
 `tunnel_db.go` only:
 
-1. Loads config, calls `cfg.ValidateTunnel()`.
+1. Loads config.
 2. Resolves the target: positional name → `tunnel.databases` lookup; `--host` +
    `--engine` → ad hoc; neither → `fuzzy.New("Select database").AddOption(...)`
    then `Select()`. Conflicting inputs fail before any cluster call.
-3. Builds `Options` (namespace precedence: flag → config → default; user from
-   `os/user`, sanitized).
+   `tunnel.databases` is validated (`ValidateDatabases`) only on the name/picker
+   paths, so a broken entry never blocks `--host` (Req 1.4).
+3. Builds `Options` (namespace precedence: flag → config → default via
+   `cmp.Or`; `max_duration` validated by `Lifetime`; user from `os/user`,
+   sanitized).
 4. `signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)` — same pattern as
    `runbook_run.go`.
 5. `NewClient`, then `tunnel.Open(ctx, client, tunnel.PortForwarder(restCfg, client, os.Stderr), target, opts)`.
-6. On a Forbidden error (`apierrors.IsForbidden`) prints the RBAC hint.
 
-The client hint printed by `Open` is a two-entry map keyed by `Target.Kind`
-(`psql -h 127.0.0.1 -p <L> -U <user> <db>`, `mysql -h 127.0.0.1 -P <L> -u <user> -p`).
+The default port and client hint per engine live in one `engines` table in
+`engine.go`, keyed by `Target.Kind` (`psql -h 127.0.0.1 -p <L> -U <user> <db>`,
+`mysql -h 127.0.0.1 -P <L> -u <user> -p`). `Target.Kind` is the generic name
+(a future redis target has no "engine"); for databases it holds the engine.
 
 Adding `tunnel redis` later = a new `tunnel_redis.go` that resolves its own
 `Target` and calls the same `Open`, plus a `DefaultPort` entry and client hint.
@@ -253,9 +265,9 @@ type TunnelDatabase struct {
 }
 ```
 
-`ValidateTunnel()` follows the existing `ValidateAWS`/`ValidateGitHub` pattern:
-called by the tunnel commands only, so a bad `tunnel` section never breaks
-`auth` or `github` commands. Host/port/engine checks reuse `pkg/tunnel/validate.go`
+`ValidateDatabases()` and `Lifetime()` are called by the tunnel commands only,
+so a bad `tunnel` section never breaks `auth` or `github` commands. `Lifetime`
+requires whole seconds ≥ 1s, since it becomes `activeDeadlineSeconds`. Host/port/engine checks reuse `pkg/tunnel/validate.go`
 and `engine.go` — one set of rules for config and flags.
 
 Example:
@@ -273,9 +285,11 @@ tunnel:
 ## Error Handling
 
 - Errors are wrapped with `fmt.Errorf("context: %w", err)`, preserving client-go's
-  `*StatusError` so the command layer can test `apierrors.IsForbidden`.
-- No custom `*Error` type in v1: the only caller branch is "is it Forbidden",
-  which client-go already answers. Add one if a second branch appears.
+  `*StatusError`.
+- `Open` adds the RBAC hint itself (`withRBACHint`) to any Forbidden error it
+  returns, and to the log-stream and delete warnings, so the command layer
+  does not inspect Kubernetes errors. No custom `*Error` type: no caller
+  branches on the failure kind.
 - Teardown runs from a `defer` in `Open` once the pod exists, so every exit path
   after creation deletes the pod (Req 4.4, 6.1). Deletion failure is printed,
   not returned over the original error (Req 6.3).
@@ -313,11 +327,16 @@ observed through `Open`, not by calling `buildPod`/`waitReady` directly.
   - banner + client hint; pod logs to stderr
   - reconnect while Running, including through API errors; pod stopped (after a
     drop, and while idle) → error with reason
-  - Forbidden stays recognisable; Ctrl-C while waiting → nil + pod deleted;
+  - pod deleted while idle → "was deleted"; name collision → new name
+  - Ctrl-C while waiting → nil + pod deleted;
     delete retried through API errors; persistent delete failure → warning
   - knobs (`ReadyTimeout`, `RetryInterval`, `DeleteTimeout`,
     `PodWatchInterval`) are exposed to tests via `export_test.go`
-- `pkg/config/tunnel_test.go`: loading the section, `ValidateTunnel`, `Lifetime`.
+- `pkg/tunnel/tunnel_rbac_test.go`: Forbidden on create, port-forward (no
+  reconnect loop), logs and delete each carry the RBAC hint; a first forward
+  that never connects fails instead of retrying.
+- `pkg/config/tunnel_test.go`: loading the section, `ValidateDatabases`,
+  `Lifetime` (including sub-second and fractional values).
 - `internal/cmd/tunnel_db_test.go`: `resolveDBTarget` — name, flags, picker
   (stubbed), conflicting/missing flags, unknown name, empty config.
 

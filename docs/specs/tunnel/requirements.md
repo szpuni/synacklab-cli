@@ -34,7 +34,7 @@ interactively day to day and also script it.
 3. IF `<name>` does not match any configured database THEN the system SHALL fail with an error listing the configured names.
 4. WHEN the user runs `synacklab tunnel db --host <host> --engine <mysql|postgres>` THEN the system SHALL use that ad hoc target without reading `tunnel.databases`.
 5. WHEN `--port` is omitted for an ad hoc target THEN the system SHALL use the engine's default port (mysql 3306, postgres 5432).
-6. IF both `<name>` and `--host` are given, or `--host` is given without `--engine` THEN the system SHALL fail with a usage error before contacting the cluster.
+6. IF both `<name>` and `--host` are given, `--host` is given without `--engine`, or `--engine`/`--port` is given without `--host` THEN the system SHALL fail with a usage error before contacting the cluster.
 7. IF no name and no `--host` are given and `tunnel.databases` is empty THEN the system SHALL fail with an error explaining how to configure databases or use `--host`.
 
 ### Requirement 2 — Configuration and input validation
@@ -47,9 +47,9 @@ a clear message instead of as a broken pod.
 
 1. WHEN `~/.synacklab/config.yaml` contains a `tunnel` section THEN the system SHALL read `namespace`, `image`, `max_duration`, `node_selector`, and `databases` (each with `name`, `engine`, `host`, optional `port`) from it.
 2. IF `namespace`, `image`, or `max_duration` is omitted THEN the system SHALL default to `synacklab-tunnels`, the pinned default socat image, and `8h` respectively.
-3. WHEN a tunnel command runs THEN the system SHALL validate every configured database and fail, naming the offending entry, if `engine` is not `mysql` or `postgres`, `host` is not a valid RFC 1123 hostname or IP address, `port` is outside 1–65535, or `name` is empty or duplicated.
+3. WHEN a tunnel command uses `tunnel.databases` (a name argument or the picker) THEN the system SHALL validate every configured database and fail, naming the offending entry, if `engine` is not `mysql` or `postgres`, `host` is not a valid RFC 1123 hostname or IP address, `port` is outside 1–65535, or `name` is empty or duplicated.
 4. WHEN `--host`, `--port`, `--engine`, or `--local-port` are given THEN the system SHALL apply the same validation as AC 3 before contacting the cluster.
-5. IF `max_duration` does not parse as a positive Go duration THEN the system SHALL fail with an error naming the field.
+5. IF `max_duration` does not parse as a Go duration of a whole number of seconds, at least 1s (it becomes `activeDeadlineSeconds`), THEN the system SHALL fail with an error naming the field.
 6. WHEN a host value starts with `-` THEN the system SHALL reject it (it would be interpreted as a socat option).
 
 ### Requirement 3 — Tunnel pod
@@ -60,7 +60,7 @@ cluster's attack surface.
 
 #### Acceptance Criteria
 
-1. WHEN a tunnel opens THEN the system SHALL create exactly one pod in the resolved namespace with name prefix `synacklab-tunnel-<user>-` (generated suffix), where `<user>` is the local OS username sanitized to a DNS-1123 label fragment.
+1. WHEN a tunnel opens THEN the system SHALL create exactly one pod in the resolved namespace with name prefix `synacklab-tunnel-<user>-` (random suffix, regenerated if the name is already taken), where `<user>` is the local OS username sanitized to a DNS-1123 label fragment.
 2. WHEN the pod is created THEN it SHALL carry labels `app.kubernetes.io/managed-by=synacklab`, `synacklab.io/user=<user>`, and `synacklab.io/target=<engine>`.
 3. WHEN the pod is created THEN its single container SHALL run the configured image with socat arguments passed as an argv list (no shell): listen on TCP port 8080 with `fork,reuseaddr`, connect to `<host>:<port>` with a 10-second connect timeout (IPv6 hosts bracketed).
 4. WHEN the pod is created THEN it SHALL set `restartPolicy: Never`, `automountServiceAccountToken: false`, `activeDeadlineSeconds` equal to `max_duration`, and the configured `node_selector`.
@@ -77,9 +77,9 @@ wrong.
 
 1. WHEN the pod is created THEN the system SHALL wait up to 2 minutes for the pod to be Running with its container Ready before forwarding.
 2. IF the pod reports an image pull failure, an unschedulable condition, or a terminated container while waiting THEN the system SHALL stop waiting immediately and report the Kubernetes reason and message.
-3. IF the pod is not ready within 2 minutes THEN the system SHALL fail with a timeout error including the pod's last observed phase and reason.
+3. IF the pod is not ready within 2 minutes THEN the system SHALL fail with a timeout error including the pod's last observed phase and reason, and its container's waiting reason (e.g. `ContainerCreating`).
 4. WHEN the tunnel fails to become ready for any reason THEN the system SHALL delete the pod before exiting non-zero.
-5. IF the Kubernetes API returns Forbidden for any tunnel operation THEN the system SHALL report the denied verb/resource/namespace and point to the RBAC section of `docs/tunnel.md`.
+5. IF the Kubernetes API returns Forbidden for any tunnel operation (create, get, logs, port-forward, delete) THEN the system SHALL report the denied verb/resource/namespace and point to the RBAC section of `docs/tunnel.md`; a denied port-forward SHALL end the tunnel rather than be retried.
 
 ### Requirement 5 — Port forwarding
 
@@ -93,9 +93,9 @@ on my machine, so that I can point `psql`, `mysql`, or a GUI client at it.
 3. WHEN the pod is ready THEN the system SHALL forward `127.0.0.1:<local-port>` to pod port 8080 through the Kubernetes API, and SHALL NOT listen on any non-loopback address.
 4. WHEN forwarding starts THEN the system SHALL print the pod name, namespace, target engine and `host:port`, the local address, an example client command for the engine, and how to stop.
 5. WHILE the tunnel is open THEN the system SHALL stream the pod's log output (socat errors such as refused or timed-out upstream connections) to stderr.
+6. IF the forwarding stream drops while the pod is still Running THEN the system SHALL re-establish forwarding on the same local port and print a notice, retrying the pod lookup through transient API errors (e.g. an API server restarting) for up to 1 minute. IF the first forward fails before it ever listened THEN the system SHALL fail instead of retrying.
+7. IF the pod is no longer Running (e.g. `max_duration` reached) or has been deleted THEN the system SHALL stop forwarding within one pod check (5 seconds plus the API call), even while no connection is open, report the pod's phase and reason (or that it was deleted), and exit non-zero.
 8. IF a tunnel command fails at runtime THEN the system SHALL print the error without the command's usage text.
-6. IF the forwarding stream drops while the pod is still Running THEN the system SHALL re-establish forwarding on the same local port and print a notice, retrying the pod lookup through transient API errors (e.g. an API server restarting) for up to 1 minute.
-7. IF the pod is no longer Running (e.g. `max_duration` reached) THEN the system SHALL stop forwarding within 5 seconds, even while no connection is open, report the pod's phase and reason, and exit non-zero.
 
 ### Requirement 6 — Teardown
 

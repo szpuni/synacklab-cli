@@ -348,14 +348,16 @@ tunnel:
 |---|---|---|
 | `namespace` | `synacklab-tunnels` | Namespace for tunnel pods. `--namespace` overrides it. |
 | `image` | pinned `alpine/socat` | Image whose entrypoint is `socat`; pin by digest when overriding (e.g. a registry mirror). |
-| `max_duration` | `8h` | Go duration (`90m`, `2h`). Sets the pod's `activeDeadlineSeconds`. |
+| `max_duration` | `8h` | Go duration in whole seconds, at least `1s` (`90m`, `2h`). Sets the pod's `activeDeadlineSeconds`. |
 | `node_selector` | none | Node labels for the tunnel pod, so its traffic comes from an allowed subnet. |
 | `databases[].name` | required | Unique name used by `synacklab tunnel db <name>` and the picker. |
 | `databases[].engine` | required | `mysql` or `postgres`. |
 | `databases[].host` | required | Hostname or IP, resolved inside the cluster. |
 | `databases[].port` | engine default | 3306 for mysql, 5432 for postgres. |
 
-The section is validated when a tunnel command runs; other commands ignore it.
+`max_duration` is validated when a tunnel command runs, and `databases` when a
+command uses them (by name or the picker), so a broken entry never blocks
+`--host`. Other commands ignore the section.
 
 ## Configuration Examples
 

@@ -114,3 +114,25 @@
     to the core/v1 client → 45.4 MB. `tunnel_test.go` hit 498 lines and was
     split into `tunnel_test.go` / `tunnel_resilience_test.go`
   - _Requirements: all_
+
+- [x] 9. Code-review fixes
+  - Forbidden from any step carries the RBAC hint, added in `pkg/tunnel`
+    (`withRBACHint`); a denied port-forward, or a first forward that never
+    connects, ends the tunnel instead of looping on "reconnecting"
+  - `PortForwarder` keeps the WebSocket Forbidden status when the SPDY fallback
+    fails too (client-go flattens SPDY errors to text)
+  - Pod deleted from outside → "tunnel pod … was deleted" within one pod check;
+    `getPodRetrying` no longer retries NotFound
+  - Timeout message includes the container waiting reason
+  - `max_duration` must be whole seconds ≥ 1s
+  - `tunnel.databases` validated only when used, so `--host` ignores a broken
+    entry (`TunnelConfig.ValidateDatabases` replaces `Config.ValidateTunnel`)
+  - Pod name collision retried with a new suffix (up to 3 creates)
+  - One `engines` table (port + client hint); `cmp.Or` for flag/config
+    precedence; `config.example.yaml` gains a `tunnel` section
+  - Verify: unit tests above; on kind (Kubernetes 1.36), a user without
+    `pods/portforward` fails in ~2s with both denials and the RBAC hint and
+    the pod is deleted; with the documented Role (`create` only) the tunnel
+    serves traffic over the SPDY fallback; `kubectl delete pod` on an idle
+    tunnel exits 1 with "was deleted" after 4s
+  - _Requirements: 1.4, 1.6, 2.3, 2.5, 3.1, 4.3, 4.5, 5.6, 5.7_
