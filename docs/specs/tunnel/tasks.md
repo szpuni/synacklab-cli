@@ -136,3 +136,20 @@
     serves traffic over the SPDY fallback; `kubectl delete pod` on an idle
     tunnel exits 1 with "was deleted" after 4s
   - _Requirements: 1.4, 1.6, 2.3, 2.5, 3.1, 4.3, 4.5, 5.6, 5.7_
+
+- [x] 10. Second review fixes
+  - Port-forward denial comes from SPDY's own 403 (`deniedTransport` decodes the
+    `metav1.Status`), not from the always-denied WebSocket attempt: a transient
+    SPDY failure under the documented Role now reconnects, and a SPDY denial
+    after a non-403 WebSocket failure is reported with the RBAC hint
+  - Ctrl-C while the create request is in flight deletes the client-named pod
+    and exits zero
+  - `TunnelDatabase.Target()` is the one definition of a valid target (used by
+    `ValidateDatabases`, `resolveDBTarget`, the picker); `Target.Validate()`
+    guards `Open`
+  - Pod helpers take a `PodInterface` instead of `(client, namespace, name)`;
+    `Lifetime` → `ParseMaxDuration`; private `open` → `run`
+  - `config.example.yaml` shows `tunnel.image`
+  - Verify: `forward_test.go` runs the real WebSocket→SPDY dialers against an
+    `httptest` API server; resilience test for cancelled create
+  - _Requirements: 4.5, 5.6, 6.1, 2.3, 2.4_

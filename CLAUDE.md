@@ -65,7 +65,8 @@ pkg/tunnel/                   TCP tunnels via a socat pod + kube port-forward (s
   pod.go       buildPod: socat on fixed :8080, non-root, ro rootfs, no probes (a probe
                makes socat dial the DB), connect-timeout=10, activeDeadlineSeconds
   wait.go      waitReady: polls, fails fast on ImagePull/Unschedulable/terminated
-  forward.go   PortForwarder: client-go WebSocket->SPDY fallback, 127.0.0.1 only
+  forward.go   PortForwarder: client-go WebSocket->SPDY fallback, 127.0.0.1 only; a denial
+               is reported only from SPDY's own 403 (deniedTransport)
   kube.go      NewClient: standard kubeconfig loading (exec plugins, --context)
   validate.go  ValidateHost/Port, SanitizeUser
   engine.go    engines table: default port + client hint per engine (mysql/postgres)

@@ -52,7 +52,8 @@ pkg/tunnel/
   validate.go     ValidateHost, ValidatePort, SanitizeUser
   *_test.go
 pkg/config/
-  config.go       + TunnelConfig, TunnelDatabase, TunnelConfig.ValidateDatabases(), TunnelConfig.Lifetime()
+  config.go       + TunnelConfig, TunnelDatabase, TunnelConfig.ValidateDatabases(), TunnelConfig.ParseMaxDuration(),
+                  TunnelDatabase.Target() (default port + validation: one definition of a valid target)
 internal/cmd/
   tunnel.go       `tunnel` parent: --context, --namespace persistent flags
   tunnel_db.go    `tunnel db [name]`: --host, --port, --engine, --local-port
@@ -196,12 +197,17 @@ dials SPDY-over-WebSocket first and falls back to plain SPDY
 (`NewFallbackDialerForStreaming`), using the `k8s.io/streaming` httpstream types
 (the apimachinery ones are deprecated). It listens via
 `NewOnAddressesForStreamingWithContext(ctx, dialer, []string{"127.0.0.1"}, ...)`
-so it never binds a non-loopback address. RBAC checks the WebSocket upgrade as
+so it never binds a non-loopback address. `forward_test.go` drives the real
+WebSocket→SPDY path against an `httptest` API server (denied/unavailable
+combinations). RBAC checks the WebSocket upgrade as
 `get` and SPDY as `create` on `pods/portforward`, so a denied WebSocket upgrade
-still falls back; client-go reports SPDY failures as plain text, so the
-fallback predicate keeps the WebSocket Forbidden status and returns it when
-SPDY fails too (before the forward became ready). Not unit-tested (needs a real API
-server); covered by the manual verification against kind.
+still falls back, and the documented Role (`create` only) always connects over
+SPDY. The outcome is SPDY's, so only SPDY's denial counts: client-go reports
+SPDY upgrade failures as plain text, so a wrapper around the SPDY HTTP transport
+(`deniedTransport`) decodes a 403 response's `metav1.Status` and the forwarder
+returns it as a `*StatusError`. A transient SPDY failure after a denied
+WebSocket attempt stays an ordinary (retryable) error. Actual streaming is covered by the
+manual verification against kind.
 
 ### NewClient
 
@@ -223,7 +229,7 @@ that `eks-config` writes).
    `tunnel.databases` is validated (`ValidateDatabases`) only on the name/picker
    paths, so a broken entry never blocks `--host` (Req 1.4).
 3. Builds `Options` (namespace precedence: flag → config → default via
-   `cmp.Or`; `max_duration` validated by `Lifetime`; user from `os/user`,
+   `cmp.Or`; `max_duration` validated by `ParseMaxDuration`; user from `os/user`,
    sanitized).
 4. `signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)` — same pattern as
    `runbook_run.go`.
@@ -265,8 +271,8 @@ type TunnelDatabase struct {
 }
 ```
 
-`ValidateDatabases()` and `Lifetime()` are called by the tunnel commands only,
-so a bad `tunnel` section never breaks `auth` or `github` commands. `Lifetime`
+`ValidateDatabases()` and `ParseMaxDuration()` are called by the tunnel commands only,
+so a bad `tunnel` section never breaks `auth` or `github` commands. `ParseMaxDuration`
 requires whole seconds ≥ 1s, since it becomes `activeDeadlineSeconds`. Host/port/engine checks reuse `pkg/tunnel/validate.go`
 and `engine.go` — one set of rules for config and flags.
 
@@ -290,6 +296,8 @@ tunnel:
   returns, and to the log-stream and delete warnings, so the command layer
   does not inspect Kubernetes errors. No custom `*Error` type: no caller
   branches on the failure kind.
+- Pods are named client-side, so a create cancelled by Ctrl-C mid-request
+  still deletes that name (the API server may have stored the pod).
 - Teardown runs from a `defer` in `Open` once the pod exists, so every exit path
   after creation deletes the pod (Req 4.4, 6.1). Deletion failure is printed,
   not returned over the original error (Req 6.3).
@@ -336,7 +344,7 @@ observed through `Open`, not by calling `buildPod`/`waitReady` directly.
   reconnect loop), logs and delete each carry the RBAC hint; a first forward
   that never connects fails instead of retrying.
 - `pkg/config/tunnel_test.go`: loading the section, `ValidateDatabases`,
-  `Lifetime` (including sub-second and fractional values).
+  `ParseMaxDuration` (including sub-second and fractional values).
 - `internal/cmd/tunnel_db_test.go`: `resolveDBTarget` — name, flags, picker
   (stubbed), conflicting/missing flags, unknown name, empty config.
 

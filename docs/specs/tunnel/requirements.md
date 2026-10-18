@@ -79,7 +79,7 @@ wrong.
 2. IF the pod reports an image pull failure, an unschedulable condition, or a terminated container while waiting THEN the system SHALL stop waiting immediately and report the Kubernetes reason and message.
 3. IF the pod is not ready within 2 minutes THEN the system SHALL fail with a timeout error including the pod's last observed phase and reason, and its container's waiting reason (e.g. `ContainerCreating`).
 4. WHEN the tunnel fails to become ready for any reason THEN the system SHALL delete the pod before exiting non-zero.
-5. IF the Kubernetes API returns Forbidden for any tunnel operation (create, get, logs, port-forward, delete) THEN the system SHALL report the denied verb/resource/namespace and point to the RBAC section of `docs/tunnel.md`; a denied port-forward SHALL end the tunnel rather than be retried.
+5. IF the Kubernetes API returns Forbidden for any tunnel operation (create, get, logs, port-forward, delete) THEN the system SHALL report the denied verb/resource/namespace and point to the RBAC section of `docs/tunnel.md`; a denied port-forward SHALL end the tunnel rather than be retried. A port-forward counts as denied only when the request that decides the outcome (the SPDY fallback, after a failed WebSocket upgrade) was denied.
 
 ### Requirement 5 — Port forwarding
 
@@ -105,7 +105,7 @@ don't accumulate.
 
 #### Acceptance Criteria
 
-1. WHEN the user presses Ctrl-C or the process receives SIGTERM THEN the system SHALL stop forwarding, delete the pod, and exit zero.
+1. WHEN the user presses Ctrl-C or the process receives SIGTERM THEN the system SHALL stop forwarding, delete the pod (including one whose create request was in flight), and exit zero.
 2. WHEN deleting the pod during teardown THEN the system SHALL use a fresh context with a 10-second timeout, independent of the cancelled command context, retrying through transient API errors within that timeout and treating NotFound as success.
 3. IF pod deletion fails THEN the system SHALL print the pod name, namespace, and the error, and SHALL note that the pod will still be removed when `max_duration` expires.
 4. IF the CLI exits without running teardown (crash, killed, laptop asleep) THEN Kubernetes SHALL terminate the pod no later than `max_duration` after creation via `activeDeadlineSeconds`.
