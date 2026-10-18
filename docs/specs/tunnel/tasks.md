@@ -107,7 +107,10 @@
     passes server-side validation (enforcement depends on the CNI, not tested)
   - _Requirements: 8.1, 8.2, 8.3, 8.4_
 
-- [ ] 8. Final gates
+- [x] 8. Final gates
   - Verify: `go test ./...`, `golangci-lint run`, `make build`; all files under
     500 lines
+  - Binary size (stripped): 18.2 MB → 54.4 MB with the full clientset; switched
+    to the core/v1 client → 45.4 MB. `tunnel_test.go` hit 498 lines and was
+    split into `tunnel_test.go` / `tunnel_resilience_test.go`
   - _Requirements: all_
