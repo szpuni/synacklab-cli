@@ -375,9 +375,12 @@ Raising the `go` directive enables newer version-gated GODEBUG defaults (mostly
 stricter crypto/TLS); the trial bump passed `go vet` and the full test suite
 unchanged. The macOS 12 floor comes from Go ≥ 1.25.
 
-Noticed while scoping, not changed by this spec: the CI lint step passes
-`--no-config`, so it ignores `.golangci.yml`; and golangci-lint 2.12 deprecates
-`gomodguard` in favour of `gomodguard_v2`. Both are worth a follow-up.
+The CI lint step used to pass `--no-config`, ignoring `.golangci.yml`. Under
+golangci-lint v2 that enables default errcheck rules v1 excluded, and failed CI
+on 11 pre-existing issues in `pkg/log`/`pkg/runbook`, so the flag was dropped
+(Req 9.3): CI now lints with the same config as `golangci-lint run` locally.
+Not changed: golangci-lint 2.12 deprecates `gomodguard` in favour of
+`gomodguard_v2`; worth a follow-up.
 
 ## Dependencies to add
 

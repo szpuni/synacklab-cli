@@ -152,7 +152,7 @@ any tunnel code and on its own commit.
 
 1. WHEN the module is built THEN `go.mod` SHALL declare `go 1.26.0` and SHALL NOT carry a separate `toolchain` line older than it.
 2. WHEN CI or the release workflow builds, tests, or lints THEN it SHALL use Go 1.27 (`GO_VERSION` in `.github/workflows/ci.yml` and `release.yml`).
-3. WHEN CI runs golangci-lint THEN it SHALL use a golangci-lint build compiled with Go ≥ 1.26 and a golangci-lint-action version that supports golangci-lint v2.
+3. WHEN CI runs golangci-lint THEN it SHALL use a golangci-lint build compiled with Go ≥ 1.26, a golangci-lint-action version that supports golangci-lint v2, and the repo's `.golangci.yml` (no `--no-config`: v2's defaults without it enable errcheck rules the project does not use, failing on untouched code).
 4. WHEN the toolchain is upgraded THEN `go build ./...`, `go vet ./...`, `go test ./...`, and `golangci-lint run` SHALL pass without behavior changes to existing commands.
 5. WHEN the tunnel feature adds Kubernetes dependencies THEN it SHALL use client-go v0.37 (with matching `k8s.io/api` and `k8s.io/apimachinery`).
 6. WHEN the toolchain is upgraded THEN `docs/installation.md` SHALL state Go 1.26 or later as the build-from-source requirement, and note that prebuilt macOS binaries require macOS 12 or later.
