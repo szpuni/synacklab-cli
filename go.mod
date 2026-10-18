@@ -1,8 +1,6 @@
 module synacklab
 
-go 1.23.0
-
-toolchain go1.24.5
+go 1.26.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.37.0

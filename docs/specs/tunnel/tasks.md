@@ -1,6 +1,6 @@
 # Implementation Plan
 
-- [ ] 1. Upgrade Go toolchain baseline (own commit, before any tunnel code)
+- [x] 1. Upgrade Go toolchain baseline (own commit, before any tunnel code)
   - Install a golangci-lint v2 built with Go ≥ 1.27 locally (the current
     2.12.2 build, made with Go 1.26.2, fails typechecking the Go 1.27 stdlib
     even on unchanged `main`)
@@ -12,6 +12,8 @@
     macOS binaries need macOS 12+
   - Verify: `go build ./...`, `go vet ./...`, `go test ./...`,
     `golangci-lint run` all pass locally; CI green on the branch
+  - Raising the `go` directive enabled `usetesting`'s `t.Chdir` check: four
+    runbook tests switched from manual `os.Chdir`+cleanup to `t.Chdir`
   - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.6_
 
 - [ ] 2. Tunnel config section and validation rules (TDD)
