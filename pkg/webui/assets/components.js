@@ -98,7 +98,7 @@ export function card({ title, badges = [], body = [], actions = [], ...props }) 
       h("span", { className: "card-title" }, title),
       h("span", { className: "card-badges" }, badges)),
     body,
-    actions.length ? h("div", { className: "card-actions" }, actions) : null);
+    actions.length ? h("div", { className: "card-actions card-footer" }, actions) : null);
 }
 
 // logView is a streaming output pane. append(text, kind) adds a line; kind
