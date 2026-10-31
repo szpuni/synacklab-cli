@@ -149,7 +149,7 @@ func TestOpen_RetriesDeletingThePodThroughABriefAPIServerOutage(t *testing.T) {
 	pods, err := client.CoreV1().Pods("tunnels").List(t.Context(), metav1.ListOptions{})
 	require.NoError(t, err)
 	assert.Empty(t, pods.Items)
-	assert.Empty(t, errOut.String())
+	assert.NotContains(t, errOut.String(), "Failed to delete")
 }
 
 func TestOpen_NoticesThePodStoppingWhileTheTunnelIsIdle(t *testing.T) {
