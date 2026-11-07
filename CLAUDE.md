@@ -6,12 +6,14 @@ context management, and declarative GitHub repo management. Cobra-based.
 ## Spec-driven workflow (read this first)
 
 Features and non-trivial fixes are developed via **spec-driven development**:
-`requirements.md` (EARS-format acceptance criteria) → `design.md` (architecture/components)
-→ `tasks.md` (ordered, demo-verifiable implementation steps), each task backlinked to
-requirement numbers. An optional `project-brief.md` holds the original brief when one exists.
+`intent.md` (the problem and outcome, in the originator's words) → `requirements.md`
+(EARS-format acceptance criteria) → `design.md` (architecture/components) → `tasks.md`
+(ordered, demo-verifiable implementation steps), each task backlinked to requirement
+numbers. Each document is refined with the user and explicitly approved (and committed)
+before the next is drafted. An optional `project-brief.md` holds the original brief when one exists.
 
 - **`docs/specs/<spec-name>/`** is where every spec lives — one self-contained folder per
-  spec, same three-document shape. Before changing an area a spec covers, read its
+  spec, same four-document shape (older specs have no `intent.md`). Before changing an area a spec covers, read its
   `requirements.md` and `design.md`; treat `requirements.md` as the source of truth for
   expected behavior. Work task-by-task from `tasks.md`, ticking boxes only once each task's
   verify check passes.
